@@ -96,7 +96,7 @@ class MainActivity : Activity() {
             setPadding(dp(20), dp(38), dp(16), dp(20))
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 intArrayOf(Color.rgb(28, 30, 62), Color.rgb(14, 23, 43))).apply {
-                cornerRadii = floatArrayOf(0f,0f,dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),0f,0f)
+                setCornerRadii(floatArrayOf(0f,0f,dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),0f,0f))
                 setStroke(dp(1), 0x55FFFFFF)
             }
             elevation = dp(24).toFloat()
