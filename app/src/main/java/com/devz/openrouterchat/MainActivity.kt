@@ -37,6 +37,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        accent = prefs.getInt("accent", Color.rgb(133, 115, 255))
         window.statusBarColor = Color.rgb(10, 12, 25)
         window.navigationBarColor = Color.rgb(10, 12, 25)
         window.decorView.systemUiVisibility = 0
@@ -225,7 +226,7 @@ class MainActivity : Activity() {
         sendButton = label("➤  Kirim", 13f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.rgb(123, 98, 255), Color.rgb(72, 145, 255))).apply { cornerRadius = dp(15).toFloat() }
+                intArrayOf(accent, Color.rgb(72, 145, 255))).apply { cornerRadius = dp(15).toFloat() }
             setPadding(dp(17), dp(11), dp(17), dp(11))
             setOnClickListener { submit() }
         }
@@ -304,7 +305,7 @@ class MainActivity : Activity() {
         colors.forEach { c ->
             val dot = View(this).apply {
                 background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c); setStroke(dp(2), if (accent == c) Color.WHITE else 0x55FFFFFF) }
-                setOnClickListener { accent = c; Toast.makeText(this@MainActivity, "Aksen diperbarui untuk sesi ini.", Toast.LENGTH_SHORT).show() }
+                setOnClickListener { accent = c; prefs.edit().putInt("accent", c).apply(); showSettings() }
             }
             val lp = LinearLayout.LayoutParams(dp(27), dp(27)); lp.leftMargin = dp(8)
             accentRow.addView(dot, lp)
@@ -441,7 +442,7 @@ class MainActivity : Activity() {
         label(text, 12f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(Color.rgb(112, 87, 242), Color.rgb(61, 131, 237))).apply { cornerRadius = dp(13).toFloat() }
+                intArrayOf(accent, Color.rgb(61, 131, 237))).apply { cornerRadius = dp(13).toFloat() }
             setPadding(dp(13), dp(10), dp(13), dp(10))
             setOnClickListener { action() }
         }
