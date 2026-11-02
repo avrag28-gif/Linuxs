@@ -260,7 +260,7 @@ class MainActivity : Activity() {
             setText(prefs.getString("api_key", ""))
             setTextColor(Color.WHITE); setHintTextColor(Color.rgb(132, 143, 177))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            textSize = 13f; singleLine = true
+            textSize = 13f; isSingleLine = true
             setPadding(dp(12), dp(11), dp(12), dp(11))
             background = glass(13)
         }
