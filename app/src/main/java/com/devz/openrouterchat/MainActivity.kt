@@ -523,6 +523,13 @@ class MainActivity : Activity() {
                             .put("input_schema", tool.optJSONObject("inputSchema") ?: JSONObject()
                                 .put("type", "object").put("properties", JSONObject())))
                     }
+                    claudeTools.put(JSONObject().put("name", "agentnova_device_action")
+                        .put("description", "Jalankan satu tindakan Android yang tersedia setelah persetujuan pengguna.")
+                        .put("input_schema", JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("action", JSONObject()
+                                .put("type", "string").put("enum", JSONArray()
+                                    .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
+                            .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     AnthropicClient.chat(
                         messages = requestMessages,
                         apiKey = key,
@@ -547,6 +554,14 @@ class MainActivity : Activity() {
                             .put("parameters", schema)
                         modelTools.put(JSONObject().put("type", "function").put("function", fn))
                     }
+                    modelTools.put(JSONObject().put("type", "function").put("function",
+                        JSONObject().put("name", "agentnova_device_action")
+                            .put("description", "Jalankan satu tindakan Android yang tersedia setelah persetujuan pengguna.")
+                            .put("parameters", JSONObject().put("type", "object")
+                                .put("properties", JSONObject().put("action", JSONObject()
+                                    .put("type", "string").put("enum", JSONArray()
+                                        .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
+                                .put("required", JSONArray().put("action")).put("additionalProperties", false))))
                     OpenAiCompatibleClient.chat(
                         this, requestMessages,
                         providerSnapshot = provider,
@@ -962,11 +977,49 @@ class MainActivity : Activity() {
         for (i in 0 until proposals.length()) {
             val proposal = proposals.optJSONObject(i) ?: continue
             val name = proposal.optString("name")
-            val allowed = (0 until catalog.length()).any { catalog.optJSONObject(it)?.optString("name") == name }
-            if (!allowed) { Toast.makeText(this, "Tool tidak ada dalam katalog MCP.", Toast.LENGTH_LONG).show(); return }
             val args = proposal.optJSONObject("arguments") ?: JSONObject()
             val callId = proposal.optString("id")
             val assistantMessage = proposal.optJSONObject("assistant_message")
+            if (name == "agentnova_device_action") {
+                val action = args.optString("action")
+                if (action !in setOf("pip", "camera", "volume", "settings", "app_settings")) {
+                    Toast.makeText(this, "Tindakan Android tidak dikenal.", Toast.LENGTH_LONG).show(); return
+                }
+                val descriptions = mapOf(
+                    "pip" to "Masuk ke mode Picture-in-Picture.",
+                    "camera" to "Membuka aplikasi kamera. AgentNova tidak mengambil foto secara diam-diam.",
+                    "volume" to "Membuka kontrol volume media.",
+                    "settings" to "Membuka Pengaturan Android.",
+                    "app_settings" to "Membuka Pengaturan AgentNova."
+                )
+                android.app.AlertDialog.Builder(this).setTitle("AI meminta izin perangkat")
+                    .setMessage("Tindakan: ${descriptions[action]}\n\nSetujui hanya jika kamu memang meminta tindakan ini.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Setujui") { _, _ ->
+                        val result = try {
+                            when (action) {
+                                "pip" -> { enterFloatingMode(); "Mode PiP diminta." }
+                                "camera" -> { startActivity(Intent("android.media.action.IMAGE_CAPTURE")); "Aplikasi kamera dibuka." }
+                                "volume" -> { volumeDialog(); "Kontrol volume dibuka." }
+                                "settings" -> { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)); "Pengaturan Android dibuka." }
+                                else -> { showSettings(); "Pengaturan AgentNova dibuka." }
+                            }
+                        } catch (e: Exception) { "Tindakan gagal: ${e.message ?: "tidak tersedia"}" }
+                        if (assistantMessage != null && callId.isNotBlank()) {
+                            val target = sessions.firstOrNull { it.optString("id") == currentSessionId }
+                            if (target != null) {
+                                val msgs = target.optJSONArray("messages") ?: JSONArray()
+                                msgs.put(JSONObject(assistantMessage.toString()))
+                                msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result))
+                                target.put("messages", msgs); saveSessions()
+                            }
+                            continueAfterMcp(currentSessionId, assistantMessage, callId, name, result)
+                        }
+                    }.show()
+                return
+            }
+            val allowed = (0 until catalog.length()).any { catalog.optJSONObject(it)?.optString("name") == name }
+            if (!allowed) { Toast.makeText(this, "Tool tidak ada dalam katalog MCP.", Toast.LENGTH_LONG).show(); return }
             android.app.AlertDialog.Builder(this).setTitle("AI meminta izin MCP")
                 .setMessage("Tool: $name\nArgumen:\n${args.toString(2).take(2400)}\n\nTool eksternal dapat membaca atau mengubah data. Jalankan hanya jika kamu percaya server dan argumennya.")
                 .setNegativeButton("Batal", null)
