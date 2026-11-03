@@ -40,22 +40,19 @@ object ProviderRegistry {
     fun apiKey(context: Context, provider: AiProvider = selected(context)): String {
         val prefs = context.getSharedPreferences("nova_settings", Context.MODE_PRIVATE)
         return prefs.getString("api_key_${provider.id}", null)
-            ?: if (provider.id == "openrouter") prefs.getString("api_key", "") else ""
-            ?: ""
+            ?: if (provider.id == "openrouter") prefs.getString("api_key", "").orEmpty() else ""
     }
 
     fun baseUrl(context: Context, provider: AiProvider = selected(context)): String {
         val prefs = context.getSharedPreferences("nova_settings", Context.MODE_PRIVATE)
         return prefs.getString("base_url_${provider.id}", null)
-            ?: if (provider.id == "custom") prefs.getString("custom_base_url", "") else provider.baseUrl
-            ?: provider.baseUrl
+            ?: if (provider.id == "custom") prefs.getString("custom_base_url", "").orEmpty() else provider.baseUrl
     }
 
     fun model(context: Context, provider: AiProvider = selected(context)): String {
         val prefs = context.getSharedPreferences("nova_settings", Context.MODE_PRIVATE)
         return prefs.getString("model_${provider.id}", null)
-            ?: if (provider.id == "openrouter") prefs.getString("model", provider.defaultModel) else provider.defaultModel
-            ?: provider.defaultModel
+            ?: if (provider.id == "openrouter") prefs.getString("model", provider.defaultModel).orEmpty() else provider.defaultModel
     }
 
     fun save(context: Context, providerId: String, key: String, baseUrl: String, model: String) {
