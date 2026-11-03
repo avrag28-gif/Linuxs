@@ -965,7 +965,10 @@ class MainActivity : Activity() {
                     speechOutput?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "agentnova_reply")
                 } else Toast.makeText(this, "Text-to-speech tidak tersedia.", Toast.LENGTH_SHORT).show()
             }
-        } else speechOutput?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "agentnova_reply")
+        } else {
+            speechOutput?.stop()
+            speechOutput?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "agentnova_reply")
+        }
     }
 
     override fun onDestroy() {
