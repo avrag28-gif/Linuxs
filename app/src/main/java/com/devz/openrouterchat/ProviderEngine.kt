@@ -125,7 +125,8 @@ object OpenAiCompatibleClient {
             connection.disconnect()
         }
     }
-}\n
+}
+
 /**
  * Native Anthropic Messages API client. Claude does not use the OpenAI
  * /chat/completions protocol; system messages and content blocks are mapped
@@ -161,7 +162,7 @@ object AnthropicClient {
             .put("model", model)
             .put("max_tokens", 4096)
             .put("messages", conversation)
-        if (systemParts.isNotEmpty()) body.put("system", systemParts.joinToString("\\n\\n"))
+        if (systemParts.isNotEmpty()) body.put("system", systemParts.joinToString("\n\n"))
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMs
@@ -187,7 +188,7 @@ object AnthropicClient {
             val answer = (0 until blocks.length()).mapNotNull { index ->
                 blocks.optJSONObject(index)?.takeIf { it.optString("type") == "text" }
                     ?.optString("text")?.takeIf { it.isNotBlank() }
-            }.joinToString("\\n")
+            }.joinToString("\n")
             return answer.ifBlank { "Claude mengembalikan respons kosong atau format yang belum didukung." }
         } finally {
             connection.disconnect()
