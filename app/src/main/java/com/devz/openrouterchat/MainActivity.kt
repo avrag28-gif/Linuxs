@@ -1188,7 +1188,7 @@ class MainActivity : Activity() {
                                         } ?: "UTF8"
                                         val requestedOffset = args.optLong("offset", 0L).coerceAtLeast(0L)
                                         val offset = if (bom == "UTF16LE" || bom == "UTF16BE") requestedOffset - (requestedOffset % 2L) else requestedOffset
-                                        val chunkSize = args.optInt("length", 8192).coerceIn(1, 8192)
+                                        val chunkSize = args.optInt("length", 8192).coerceIn(4, 8192)
                                         val sizeCursor = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
                                         val providerSize = sizeCursor?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else -1L } ?: -1L
                                         val descriptorSize = try { contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L } catch (_: Exception) { -1L }
