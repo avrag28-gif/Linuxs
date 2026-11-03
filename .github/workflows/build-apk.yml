@@ -1,8 +1,7 @@
 name: Build Android APK
 on:
   workflow_dispatch:
-  push:
-    branches: [main, master]
+  # Push builds are paused during implementation; run manually when the feature set is ready.
 permissions:
   contents: read
 jobs:
