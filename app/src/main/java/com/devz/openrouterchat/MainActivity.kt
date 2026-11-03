@@ -805,7 +805,20 @@ class MainActivity : Activity() {
                 attachedText = if (mime.startsWith("text/") || mime.contains("json") ||
                     mime.contains("xml") || mime.contains("csv") || name.endsWith(".md", true) ||
                     name.endsWith(".kt", true) || name.endsWith(".py", true) || name.endsWith(".log", true)) {
-                    contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(80000) }.orEmpty()
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        val previewLimit = 80 * 1024
+                        val output = java.io.ByteArrayOutputStream(previewLimit)
+                        val buffer = ByteArray(8192)
+                        while (output.size() < previewLimit) {
+                            val count = input.read(buffer, 0, minOf(buffer.size, previewLimit - output.size()))
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                        val preview = String(output.toByteArray(), Charsets.UTF_8)
+                        if (output.size() == previewLimit) {
+                            preview + "\n[Pratinjau dibatasi 80 KB. Minta AgentNova membaca bagian lain melalui tool file bertahap.]"
+                        } else preview
+                    }.orEmpty()
                 } else {
                     "[File dipilih: $name, tipe: ${mime.ifBlank { "tidak diketahui" }}. Konten biner belum diekstrak.]"
                 }
