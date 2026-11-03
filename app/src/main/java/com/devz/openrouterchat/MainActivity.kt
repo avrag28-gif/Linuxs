@@ -121,13 +121,18 @@ class MainActivity : Activity() {
     private fun sessionMessages(): JSONArray = currentSession().optJSONArray("messages") ?: JSONArray()
 
     private fun buildShell() {
-        root = FrameLayout(this).apply { setBackgroundColor(bg) }
-        val main = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(bg) }
+        root = FrameLayout(this).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(Color.rgb(9, 13, 22), Color.rgb(17, 23, 34), Color.rgb(10, 14, 22))
+            )
+        }
+        val main = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.TRANSPARENT) }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            setBackgroundColor(bg)
+            setBackgroundColor(Color.TRANSPARENT)
         }
         val menu = label("☰", 22f, primary, true).apply {
             gravity = Gravity.CENTER
@@ -699,9 +704,18 @@ class MainActivity : Activity() {
     private fun solid(color: Int, radius: Int) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(radius).toFloat()
-        setColor(color)
-        // Subtle glass-like edge: solid palette, no gradient.
-        setStroke(dp(1), Color.argb(38, 235, 241, 255))
+        val isAccent = color == accent
+        val topAlpha = if (isAccent) 238 else 188
+        val bottomAlpha = if (isAccent) 212 else 142
+        setColors(
+            intArrayOf(
+                Color.argb(topAlpha, Color.red(color), Color.green(color), Color.blue(color)),
+                Color.argb(bottomAlpha, Color.red(color), Color.green(color), Color.blue(color))
+            ),
+            GradientDrawable.Orientation.TOP_BOTTOM
+        )
+        // Translucent layered surface and a fine highlight create a glass-like finish.
+        setStroke(dp(1), Color.argb(if (isAccent) 92 else 66, 226, 236, 255))
     }
 
 
