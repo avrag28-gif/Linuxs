@@ -1110,7 +1110,7 @@ class MainActivity : Activity() {
                 if (selectedUri.isBlank() || (action == "read" && selectedKind != "file") || (action == "list" && selectedKind != "folder")) {
                     Toast.makeText(this, "Pilih sumber yang sesuai melalui Tambah sumber terlebih dahulu.", Toast.LENGTH_LONG).show(); return
                 }
-                val description = if (action == "read") "Membaca isi teks asli file dengan batas 512 KB. '$selectedName'." else "Menampilkan maksimal 500 nama item folder '$selectedName'."
+                val description = if (action == "read") "Membaca isi teks asli file dengan batas 512 KB. '$selectedName'." else "Menampilkan maksimal 100.000 nama item folder '$selectedName'."
                 android.app.AlertDialog.Builder(this).setTitle("AI meminta akses file")
                     .setMessage("$description\n\nHanya sumber yang kamu pilih melalui pemilih dokumen Android yang dapat diakses.")
                     .setNegativeButton("Batal", null)
@@ -1153,9 +1153,9 @@ class MainActivity : Activity() {
                                     val names = mutableListOf<String>()
                                     contentResolver.query(tree, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
                                         val col = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                                        while (cursor.moveToNext() && names.size < 100) if (col >= 0) names.add(cursor.getString(col))
+                                        while (cursor.moveToNext() && names.size < 100000) if (col >= 0) names.add(cursor.getString(col))
                                     }
-                                    "Isi folder '$selectedName' (maksimal 100 item):\n" + names.joinToString("\n").ifBlank { "(kosong)" }
+                                    "Isi folder '$selectedName' (maksimal 100.000 item):\n" + names.joinToString("\n").ifBlank { "(kosong)" }
                                 }
                             } catch (e: Exception) { "Akses sumber gagal: " + (e.message ?: "kesalahan tidak diketahui") }
                             runOnUiThread {
