@@ -428,6 +428,8 @@ class MainActivity : Activity() {
             showSettings(); return
         }
         if (typedMessage.isEmpty() && attachedText.isBlank() && webContext.isBlank()) { prompt.error = "Tulis pesan"; return }
+        val imageDataSnapshot = attachedImageData
+        val imageMimeSnapshot = attachedImageMime
         val requestSessionId = currentSessionId
         val requestSession = currentSession()
         val requestHistory = sessionMessages()
@@ -477,13 +479,13 @@ class MainActivity : Activity() {
                     requestMessages.put(item)
                 }
                 // Attach the selected image to the latest user turn for vision-capable compatible APIs.
-                if (provider.id != "anthropic" && attachedImageData.isNotBlank()) {
+                if (provider.id != "anthropic" && imageDataSnapshot.isNotBlank()) {
                     val last = requestMessages.optJSONObject(requestMessages.length() - 1)
                     if (last != null && last.optString("role") == "user") {
                         val parts = JSONArray()
                             .put(JSONObject().put("type", "text").put("text", last.optString("content")))
                             .put(JSONObject().put("type", "image_url").put("image_url",
-                                JSONObject().put("url", "data:$attachedImageMime;base64,$attachedImageData")))
+                                JSONObject().put("url", "data:$imageMimeSnapshot;base64,$imageDataSnapshot")))
                         last.put("content", parts)
                     }
                 }
