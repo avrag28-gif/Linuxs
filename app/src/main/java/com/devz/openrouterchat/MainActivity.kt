@@ -708,6 +708,9 @@ class MainActivity : Activity() {
             try {
                 contentResolver.takePersistableUriPermission(uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                prefs.edit().putString("agentnova_selected_uri", uri.toString())
+                    .putString("agentnova_selected_kind", "folder")
+                    .putString("agentnova_selected_name", "Folder dipilih").apply()
                 attachedName = "Folder dipilih"
                 val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri,
                     DocumentsContract.getTreeDocumentId(uri))
@@ -732,7 +735,15 @@ class MainActivity : Activity() {
         }
         if (requestCode != REQ_FILE) return
         try {
+            val persistFlags = (data?.flags ?: 0) and
+                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            if ((data?.flags ?: 0) and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0 && persistFlags != 0) {
+                contentResolver.takePersistableUriPermission(uri, persistFlags)
+            }
             val name = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "file")
+            prefs.edit().putString("agentnova_selected_uri", uri.toString())
+                .putString("agentnova_selected_kind", "file")
+                .putString("agentnova_selected_name", name).apply()
             attachedName = name
             val mime = contentResolver.getType(uri).orEmpty()
             if (mime.startsWith("image/") && (mime == "image/jpeg" || mime == "image/png" || mime == "image/webp" || mime == "image/gif")) {
