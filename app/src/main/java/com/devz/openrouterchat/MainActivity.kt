@@ -280,7 +280,7 @@ class MainActivity : Activity() {
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
         if (attachedName.isNotBlank()) composer.addView(label("📎 $attachedName", 11f, muted).apply { setPadding(0, 0, 0, dp(7)) })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        status = label(if (prefs.getString("api_key", "").isNullOrBlank()) "Tambahkan API key di Pengaturan" else "", 11f, muted)
+        status = label(if (ProviderRegistry.selected(this).requiresKey && ProviderRegistry.apiKey(this).isBlank()) "Tambahkan API key di Pengaturan" else "", 11f, muted)
         row.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
         sendButton = label("Kirim  ↑", 13f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
@@ -302,46 +302,36 @@ class MainActivity : Activity() {
         })
         val scroll = ScrollView(this)
         val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        body.addView(section("OPENROUTER API KEY"))
-        keyField = EditText(this).apply {
-            hint = "Tempel API key di sini"
-            setText(prefs.getString("api_key", ""))
-            setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7)
-        }
+        body.addView(section("PROVIDER AI"))
+        val providerSpinner = Spinner(this)
+        val providerAdapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, ProviderRegistry.providers.map { it.label })
+        providerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val selectedProvider = ProviderRegistry.selected(this)
+        providerSpinner.adapter = providerAdapter
+        providerSpinner.setSelection(ProviderRegistry.providers.indexOf(selectedProvider).coerceAtLeast(0))
+        providerSpinner.background = solid(panel, 7)
+        body.addView(providerSpinner, fieldLp())
+        body.addView(section("API KEY"))
+        keyField = EditText(this).apply { hint = "API key"; setText(ProviderRegistry.apiKey(this@MainActivity, selectedProvider)); setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD; setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7) }
         body.addView(keyField, fieldLp())
-        val keyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        keyRow.addView(smallButton("Lihat / sembunyikan") {
-            showKey = !showKey
-            keyField.inputType = InputType.TYPE_CLASS_TEXT or if (showKey) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
-            keyField.setSelection(keyField.text.length)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        keyRow.addView(smallButton("Simpan key") {
-            prefs.edit().putString("api_key", keyField.text.toString().trim()).apply()
-            Toast.makeText(this, "API key tersimpan.", Toast.LENGTH_SHORT).show()
-        })
-        body.addView(keyRow)
+        body.addView(smallButton("Lihat / sembunyikan API key") { showKey = !showKey; keyField.inputType = InputType.TYPE_CLASS_TEXT or if (showKey) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD; keyField.setSelection(keyField.text.length) })
+        body.addView(section("BASE URL"))
+        val baseUrlField = EditText(this).apply { hint = "https://api.example.com/v1"; setText(ProviderRegistry.baseUrl(this@MainActivity, selectedProvider)); setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true; inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI; setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7) }
+        body.addView(baseUrlField, fieldLp())
         body.addView(section("MODEL AI"))
-        val spinner = Spinner(this)
-        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models.map { it.substringBefore(":free") + if (it.endsWith(":free")) " · Free" else "" })
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        spinner.adapter = adapter
-        val savedModel = prefs.getString("model", models[0]) ?: models[0]
-        val selected = models.indexOf(savedModel).let { if (it < 0) 0 else it }
-        spinner.setSelection(selected)
-        spinner.setPadding(dp(8), dp(5), dp(8), dp(5))
-        spinner.background = solid(panel, 7)
-        spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+        val modelField = EditText(this).apply { hint = "Nama model"; setText(ProviderRegistry.model(this@MainActivity, selectedProvider)); setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true; setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7) }
+        body.addView(modelField, fieldLp())
+        providerSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
             override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
-                prefs.edit().putString("model", models[position]).apply()
-            }
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { val p = ProviderRegistry.providers[position]; keyField.setText(ProviderRegistry.apiKey(this@MainActivity, p)); baseUrlField.setText(ProviderRegistry.baseUrl(this@MainActivity, p)); modelField.setText(ProviderRegistry.model(this@MainActivity, p)); keyField.hint = if (p.requiresKey) "API key " + p.label else "API key opsional" }
         }
-        body.addView(spinner, fieldLp())
-        body.addView(label("Model yang dipilih dipakai untuk chat baru dan berikutnya.", 11f, muted).apply {
-            setPadding(0, dp(5), 0, dp(8))
-        })
+        body.addView(smallButton("Simpan konfigurasi provider") {
+            val p = ProviderRegistry.providers[providerSpinner.selectedItemPosition]
+            ProviderRegistry.save(this, p.id, keyField.text.toString(), baseUrlField.text.toString(), modelField.text.toString())
+            if (p.id == "openrouter") prefs.edit().putString("api_key", keyField.text.toString().trim()).putString("model", modelField.text.toString().trim()).apply()
+            Toast.makeText(this, "Provider " + p.label + " tersimpan.", Toast.LENGTH_SHORT).show()
+        }.apply { setPadding(dp(14), dp(12), dp(14), dp(12)) })
+        body.addView(label("Mendukung provider cloud, server lokal, dan endpoint OpenAI-compatible kustom.", 11f, muted).apply { setPadding(0, dp(7), 0, dp(8)) })
         body.addView(section("MCP SERVER"))
         mcpField = EditText(this).apply {
             hint = "URL endpoint MCP (HTTP)"
@@ -408,14 +398,15 @@ class MainActivity : Activity() {
         }
 
     private fun submit() {
-        val key = prefs.getString("api_key", "").orEmpty().trim()
+        val provider = ProviderRegistry.selected(this)
+        val key = ProviderRegistry.apiKey(this, provider).trim()
         val typedMessage = prompt.text.toString().trim()
         val message = buildString {
             append(typedMessage)
             if (attachedText.isNotBlank()) append("\n\n[File terlampir: $attachedName]\n$attachedText")
             if (webContext.isNotBlank()) append("\n\n$webContext")
         }
-        if (key.isEmpty()) {
+        if (provider.requiresKey && key.isEmpty()) {
             Toast.makeText(this, "Masukkan API key di Pengaturan.", Toast.LENGTH_SHORT).show()
             showSettings(); return
         }
@@ -434,44 +425,15 @@ class MainActivity : Activity() {
         buildDrawer()
         val loading = messageCard("AgentNova", "Sedang menjawab...", false)
         messagesView.addView(loading)
-        val model = prefs.getString("model", models[0]) ?: models[0]
         val memory = prefs.getString("memory", "").orEmpty().trim()
         thread {
-            var connection: HttpURLConnection? = null
             val answer = try {
-                connection = (URL("https://openrouter.ai/api/v1/chat/completions").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 20000; readTimeout = 60000; doOutput = true
-                    setRequestProperty("Authorization", "Bearer $key")
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("HTTP-Referer", "https://github.com/avrag28-gif/Linuxs")
-                    setRequestProperty("X-Title", "AgentNova")
-                }
                 val requestMessages = JSONArray()
-                if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system")
-                    .put("content", "Informasi memori pengguna yang boleh digunakan untuk personalisasi: $memory"))
+                if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system").put("content", "Informasi memori pengguna yang boleh digunakan untuk personalisasi: " + memory))
                 val history = sessionMessages()
                 for (i in 0 until history.length()) requestMessages.put(history.getJSONObject(i))
-                val body = JSONObject().put("model", model).put("messages", requestMessages)
-                connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val raw = stream?.bufferedReader()?.use { it.readText() } ?: ""
-                if (code !in 200..299) {
-                    val detail = try { JSONObject(raw).optJSONObject("error")?.optString("message") ?: raw } catch (_: Exception) { raw }
-                    "Permintaan gagal (HTTP $code).\n$detail"
-                } else {
-                    val content = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
-                    when (content) {
-                        is String -> content.ifBlank { "Respons kosong dari model." }
-                        is JSONArray -> (0 until content.length()).mapNotNull { i ->
-                            content.optJSONObject(i)?.optString("text")?.takeIf { it.isNotBlank() }
-                        }.joinToString("\n").ifBlank { "Format respons belum didukung." }
-                        else -> "Respons kosong dari model."
-                    }
-                }
-            } catch (e: Exception) {
-                "Koneksi gagal: ${e.message ?: "periksa internet dan API key."}"
-            } finally { connection?.disconnect() }
+                OpenAiCompatibleClient.chat(this, requestMessages)
+            } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
             runOnUiThread {
                 messagesView.removeView(loading)
                 val latest = currentSession()
