@@ -180,6 +180,18 @@ class MainActivity : Activity() {
         }
         root.addView(drawer, FrameLayout.LayoutParams(dp(292), -1, Gravity.START))
         setContentView(root)
+        if (Build.VERSION.SDK_INT >= 35) {
+            root.setOnApplyWindowInsetsListener { view, insets ->
+                view.setPadding(
+                    insets.systemWindowInsetLeft,
+                    insets.systemWindowInsetTop,
+                    insets.systemWindowInsetRight,
+                    insets.systemWindowInsetBottom
+                )
+                insets
+            }
+            root.requestApplyInsets()
+        }
         buildDrawer()
     }
 
