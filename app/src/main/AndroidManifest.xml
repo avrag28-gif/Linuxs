@@ -2,12 +2,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <application
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:label="NOVA AI"
+        android:label="AgentNova"
         android:usesCleartextTraffic="false">
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize"
+            android:supportsPictureInPicture="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
