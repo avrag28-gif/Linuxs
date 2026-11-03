@@ -22,6 +22,7 @@ object ProviderRegistry {
     val providers = listOf(
         AiProvider("openrouter", "OpenRouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free"),
         AiProvider("openai", "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini"),
+        AiProvider("anthropic", "Anthropic Claude (native API)", "https://api.anthropic.com/v1", "claude-3-5-haiku-latest"),
         AiProvider("gemini", "Google Gemini (OpenAI-compatible)", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.0-flash"),
         AiProvider("deepseek", "DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
         AiProvider("groq", "Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
@@ -120,6 +121,74 @@ object OpenAiCompatibleClient {
                 }.joinToString("\n").ifBlank { "Format respons belum didukung." }
                 else -> "Respons kosong atau format respons belum didukung."
             }
+        } finally {
+            connection.disconnect()
+        }
+    }
+}\n
+/**
+ * Native Anthropic Messages API client. Claude does not use the OpenAI
+ * /chat/completions protocol; system messages and content blocks are mapped
+ * explicitly here. API keys are never logged.
+ */
+object AnthropicClient {
+    fun chat(
+        messages: JSONArray,
+        apiKey: String,
+        baseUrl: String,
+        model: String,
+        connectTimeoutMs: Int = 20000,
+        readTimeoutMs: Int = 90000
+    ): String {
+        require(apiKey.isNotBlank()) { "API key Anthropic belum diisi." }
+        require(model.isNotBlank()) { "Nama model Claude belum diisi." }
+        val endpoint = baseUrl.trimEnd('/') + "/messages"
+        require(endpoint.startsWith("https://")) { "Anthropic API wajib menggunakan HTTPS." }
+        val systemParts = mutableListOf<String>()
+        val conversation = JSONArray()
+        for (i in 0 until messages.length()) {
+            val item = messages.optJSONObject(i) ?: continue
+            val role = item.optString("role")
+            val content = item.optString("content")
+            if (role == "system") {
+                if (content.isNotBlank()) systemParts.add(content)
+            } else if (role == "user" || role == "assistant") {
+                conversation.put(JSONObject().put("role", role).put("content", content))
+            }
+        }
+        require(conversation.length() > 0) { "Pesan percakapan kosong." }
+        val body = JSONObject()
+            .put("model", model)
+            .put("max_tokens", 4096)
+            .put("messages", conversation)
+        if (systemParts.isNotEmpty()) body.put("system", systemParts.joinToString("\\n\\n"))
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("x-api-key", apiKey)
+            setRequestProperty("anthropic-version", "2023-06-01")
+        }
+        try {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val detail = try {
+                    JSONObject(raw).optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: raw
+                } catch (_: Exception) { raw }
+                throw IllegalStateException("Anthropic HTTP $code: ${detail.take(700)}")
+            }
+            val blocks = JSONObject(raw).optJSONArray("content") ?: JSONArray()
+            val answer = (0 until blocks.length()).mapNotNull { index ->
+                blocks.optJSONObject(index)?.takeIf { it.optString("type") == "text" }
+                    ?.optString("text")?.takeIf { it.isNotBlank() }
+            }.joinToString("\\n")
+            return answer.ifBlank { "Claude mengembalikan respons kosong atau format yang belum didukung." }
         } finally {
             connection.disconnect()
         }
