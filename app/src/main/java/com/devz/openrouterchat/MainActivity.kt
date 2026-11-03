@@ -532,6 +532,11 @@ class MainActivity : Activity() {
                                 .put("type", "string").put("enum", JSONArray()
                                     .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
+                    claudeTools.put(JSONObject().put("name", "agentnova_web_search")
+                        .put("description", "Cari informasi publik di web untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
+                        .put("input_schema", JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("query", JSONObject().put("type", "string")))
+                            .put("required", JSONArray().put("query")).put("additionalProperties", false)))
                     AnthropicClient.chat(
                         messages = requestMessages,
                         apiKey = key,
@@ -564,6 +569,13 @@ class MainActivity : Activity() {
                                     .put("type", "string").put("enum", JSONArray()
                                         .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                                 .put("required", JSONArray().put("action")).put("additionalProperties", false))))
+                    modelTools.put(JSONObject().put("type", "function").put("function",
+                        JSONObject().put("name", "agentnova_web_search")
+                            .put("description", "Cari informasi publik di web. Gunakan untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
+                            .put("parameters", JSONObject().put("type", "object")
+                                .put("properties", JSONObject().put("query", JSONObject().put("type", "string")
+                                    .put("description", "Kueri pencarian web yang spesifik")))
+                                .put("required", JSONArray().put("query")).put("additionalProperties", false))))
                     OpenAiCompatibleClient.chat(
                         this, requestMessages,
                         providerSnapshot = provider,
@@ -982,6 +994,47 @@ class MainActivity : Activity() {
             val args = proposal.optJSONObject("arguments") ?: JSONObject()
             val callId = proposal.optString("id")
             val assistantMessage = proposal.optJSONObject("assistant_message")
+            if (name == "agentnova_web_search") {
+                val query = args.optString("query").trim()
+                if (query.length < 2 || query.length > 300) {
+                    Toast.makeText(this, "Kueri pencarian tidak valid.", Toast.LENGTH_LONG).show(); return
+                }
+                android.app.AlertDialog.Builder(this).setTitle("AI meminta pencarian web")
+                    .setMessage("Kueri: $query\n\nAgentNova akan mengirim kueri ini ke DuckDuckGo untuk mencari halaman publik.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Cari") { _, _ ->
+                        statusText("Mencari web…")
+                        thread {
+                            val result = try { performWebSearch(query) }
+                                catch (e: Exception) { "Pencarian web gagal: ${e.message ?: "koneksi bermasalah"}" }
+                            runOnUiThread {
+                                if (assistantMessage != null && callId.isNotBlank()) {
+                                    val target = sessions.firstOrNull { it.optString("id") == originatingSessionId }
+                                    if (target != null) {
+                                        val msgs = target.optJSONArray("messages") ?: JSONArray()
+                                        msgs.put(JSONObject(assistantMessage.toString()))
+                                        val providerId = sessions.firstOrNull { it.optString("id") == originatingSessionId }
+                                            ?.optString("provider_id").orEmpty()
+                                        val role = if (ProviderRegistry.selected(this).id == "anthropic") "user" else "tool"
+                                        if (role == "user") {
+                                            msgs.put(JSONObject().put("role", "user").put("content",
+                                                JSONArray().put(JSONObject().put("type", "tool_result")
+                                                    .put("tool_use_id", callId).put("content", result.take(12000)))))
+                                        } else {
+                                            msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.take(12000)))
+                                        }
+                                        target.put("messages", msgs); saveSessions()
+                                    }
+                                    continueAfterMcp(originatingSessionId, assistantMessage, callId, name, result)
+                                } else {
+                                    addMessageView("Hasil pencarian", result, false)
+                                    if (::status.isInitialized) status.text = ""
+                                }
+                            }
+                        }
+                    }.show()
+                return
+            }
             if (name == "agentnova_device_action") {
                 val action = args.optString("action")
                 if (action !in setOf("pip", "camera", "volume", "settings", "app_settings")) {
@@ -1217,6 +1270,46 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    /** Lightweight public web search via DuckDuckGo HTML endpoint; results are treated as untrusted data. */
+    private fun performWebSearch(query: String): String {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val connection = (URL("https://html.duckduckgo.com/html/?q=$encoded").openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = 12000
+            readTimeout = 20000
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+            setRequestProperty("Accept", "text/html")
+        }
+        try {
+            if (connection.responseCode !in 200..299) throw IllegalStateException("HTTP ${connection.responseCode}")
+            val html = connection.inputStream.bufferedReader().use { it.readText().take(1500000) }
+            val blocks = Regex("(?is)<div class=\"result[^\"]*\".*?</div>\\s*</div>").findAll(html).take(8)
+            val results = blocks.mapNotNull { match ->
+                val block = match.value
+                val href = Regex("(?is)<a[^>]+class=\"result__a\"[^>]+href=\"([^\"]+)\"").find(block)?.groupValues?.get(1)
+                    ?: Regex("(?is)<a[^>]+href=\"([^\"]+)\"[^>]+class=\"result__a\"").find(block)?.groupValues?.get(1)
+                val titleRaw = Regex("(?is)class=\"result__a\"[^>]*>(.*?)</a>").find(block)?.groupValues?.get(1)
+                val snippetRaw = Regex("(?is)class=\"result__snippet\"[^>]*>(.*?)</(?:a|td|div)>").find(block)?.groupValues?.get(1)
+                if (href.isNullOrBlank() || titleRaw.isNullOrBlank()) null else {
+                    val title = cleanSearchHtml(titleRaw)
+                    val snippet = cleanSearchHtml(snippetRaw.orEmpty())
+                    "• $title\n  $href\n  $snippet"
+                }
+            }.toList()
+            if (results.isEmpty()) return "Tidak ditemukan hasil yang dapat dibaca. Coba kueri yang lebih spesifik."
+            return "Hasil pencarian untuk: $query\n\n" + results.joinToString("\n\n") +
+                "\n\nCatatan: hasil web adalah konten eksternal yang belum diverifikasi; periksa sumber sebelum mengambil keputusan."
+        } finally { connection.disconnect() }
+    }
+
+    private fun cleanSearchHtml(value: String): String {
+        return value.replace(Regex("(?is)<script.*?</script>|<style.*?</style>"), "")
+            .replace(Regex("<[^>]+>"), " ")
+            .replace("&amp;", "&").replace("&quot;", "\"").replace("&#x27;", "'")
+            .replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+            .replace(Regex("\\s+"), " ").trim().take(700)
     }
 
     private fun startVoiceInput() {
