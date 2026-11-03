@@ -411,11 +411,12 @@ class MainActivity : Activity() {
             showSettings(); return
         }
         if (typedMessage.isEmpty() && attachedText.isBlank() && webContext.isBlank()) { prompt.error = "Tulis pesan"; return }
-        val session = currentSession()
-        val arr = sessionMessages()
-        arr.put(JSONObject().put("role", "user").put("content", message))
-        session.put("messages", arr)
-        if (arr.length() == 1) session.put("title", message.take(34))
+        val requestSessionId = currentSessionId
+        val requestSession = currentSession()
+        val requestHistory = sessionMessages()
+        requestHistory.put(JSONObject().put("role", "user").put("content", message))
+        requestSession.put("messages", requestHistory)
+        if (requestHistory.length() == 1) requestSession.put("title", message.take(34))
         saveSessions()
         addMessageView("Kamu", message, true)
         prompt.setText("")
@@ -423,28 +424,37 @@ class MainActivity : Activity() {
         sendButton.isEnabled = false
         status.text = "Menunggu jawaban..."
         buildDrawer()
+        val requestMessagesView = messagesView
         val loading = messageCard("AgentNova", "Sedang menjawab...", false)
-        messagesView.addView(loading)
+        requestMessagesView.addView(loading)
         val memory = prefs.getString("memory", "").orEmpty().trim()
+        // Snapshot the conversation before leaving the UI thread. A later chat switch
+        // must not change the request payload or the destination of its response.
+        val historySnapshot = JSONArray(requestHistory.toString())
         thread {
             val answer = try {
                 val requestMessages = JSONArray()
                 if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system").put("content", "Informasi memori pengguna yang boleh digunakan untuk personalisasi: " + memory))
-                val history = sessionMessages()
-                for (i in 0 until history.length()) requestMessages.put(history.getJSONObject(i))
+                for (i in 0 until historySnapshot.length()) {
+                    requestMessages.put(JSONObject(historySnapshot.getJSONObject(i).toString()))
+                }
                 OpenAiCompatibleClient.chat(this, requestMessages)
             } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
             runOnUiThread {
-                messagesView.removeView(loading)
-                val latest = currentSession()
-                val latestArr = sessionMessages()
-                latestArr.put(JSONObject().put("role", "assistant").put("content", answer))
-                latest.put("messages", latestArr)
-                saveSessions()
-                addMessageView("AgentNova", answer, false)
-                sendButton.isEnabled = true
-                status.text = ""
-                buildDrawer()
+                requestMessagesView.removeView(loading)
+                val destination = sessions.firstOrNull { it.optString("id") == requestSessionId }
+                if (destination != null) {
+                    val destinationMessages = destination.optJSONArray("messages") ?: JSONArray()
+                    destinationMessages.put(JSONObject().put("role", "assistant").put("content", answer))
+                    destination.put("messages", destinationMessages)
+                    saveSessions()
+                    if (currentSessionId == requestSessionId) {
+                        addMessageView("AgentNova", answer, false)
+                        if (::sendButton.isInitialized) sendButton.isEnabled = true
+                        if (::status.isInitialized) status.text = ""
+                        buildDrawer()
+                    }
+                }
             }
         }
     }
