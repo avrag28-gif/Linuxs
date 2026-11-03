@@ -514,9 +514,10 @@ class MainActivity : Activity() {
                         model = model
                     )
                 } else {
-                    val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", ""))
-                        try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } else JSONArray()
+                    val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", "")) {
+                        try { JSONArray(prefs.getString("mcp_tools_json", "[]")) }
                         catch (_: Exception) { JSONArray() }
+                    } else JSONArray()
                     val modelTools = JSONArray()
                     for (index in 0 until catalog.length()) {
                         val tool = catalog.optJSONObject(index) ?: continue
@@ -934,8 +935,9 @@ class MainActivity : Activity() {
     private fun confirmMcpProposals(raw: String) {
         val proposals = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
         if (proposals.length() == 0) { Toast.makeText(this, "Proposal MCP tidak valid.", Toast.LENGTH_LONG).show(); return }
-        val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", ""))
-            try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() } else JSONArray()
+        val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", "")) {
+            try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() }
+        } else JSONArray()
         for (i in 0 until proposals.length()) {
             val proposal = proposals.optJSONObject(i) ?: continue
             val name = proposal.optString("name")
