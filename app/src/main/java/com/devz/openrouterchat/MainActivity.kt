@@ -1207,7 +1207,7 @@ class MainActivity : Activity() {
                                         val nextOffset = offset + safeLength
                                         val hasMore = if (fileSize >= 0L) nextOffset < fileSize else bytes.size == chunkSize
                                         val sizeLabel = if (fileSize >= 0L) "ukuran total $fileSize byte" else "ukuran total tidak dilaporkan penyedia"
-                                        "Potongan file '$selectedName' (offset $offset, ${bytes.size} byte, $sizeLabel):\n" + decoded +
+                                        "Potongan file '$selectedName' (offset $offset, ${safeLength} byte, $sizeLabel):\n" + decoded +
                                             if (hasMore) "\n[Bagian berikutnya: action=read, offset=$nextOffset, length=8192]" else "\n[SELESAI: akhir file tercapai.]"
                                     }
                                 } else {
