@@ -256,7 +256,7 @@ class MainActivity : Activity() {
         } else {
             for (i in 0 until msgs.length()) {
                 val m = msgs.optJSONObject(i) ?: continue
-                addMessageView(if (m.optString("role") == "user") "Kamu" else "NOVA",
+                addMessageView(if (m.optString("role") == "user") "Kamu" else "AgentNova",
                     m.optString("content"), m.optString("role") == "user")
             }
         }
@@ -430,7 +430,7 @@ class MainActivity : Activity() {
         sendButton.isEnabled = false
         status.text = "Menunggu jawaban..."
         buildDrawer()
-        val loading = messageCard("NOVA", "Sedang menjawab...", false)
+        val loading = messageCard("AgentNova", "Sedang menjawab...", false)
         messagesView.addView(loading)
         val model = prefs.getString("model", models[0]) ?: models[0]
         val memory = prefs.getString("memory", "").orEmpty().trim()
@@ -477,7 +477,7 @@ class MainActivity : Activity() {
                 latestArr.put(JSONObject().put("role", "assistant").put("content", answer))
                 latest.put("messages", latestArr)
                 saveSessions()
-                addMessageView("NOVA", answer, false)
+                addMessageView("AgentNova", answer, false)
                 sendButton.isEnabled = true
                 status.text = ""
                 buildDrawer()
