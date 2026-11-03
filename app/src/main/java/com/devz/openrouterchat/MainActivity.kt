@@ -534,6 +534,12 @@ class MainActivity : Activity() {
                                 .put("type", "string").put("enum", JSONArray()
                                     .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
+                    claudeTools.put(JSONObject().put("name", "agentnova_selected_file")
+                        .put("description", "Read a user-selected text file or list a user-selected folder after explicit approval.")
+                        .put("input_schema", JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
+                                .put("enum", JSONArray().put("read").put("list")))
+                            .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_web_search")
                         .put("description", "Cari informasi publik di web untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
                         .put("input_schema", JSONObject().put("type", "object")
@@ -570,6 +576,13 @@ class MainActivity : Activity() {
                                 .put("properties", JSONObject().put("action", JSONObject()
                                     .put("type", "string").put("enum", JSONArray()
                                         .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
+                                .put("required", JSONArray().put("action")).put("additionalProperties", false))))
+                    modelTools.put(JSONObject().put("type", "function").put("function",
+                        JSONObject().put("name", "agentnova_selected_file")
+                            .put("description", "Read a user-selected text file or list a user-selected folder after explicit approval.")
+                            .put("parameters", JSONObject().put("type", "object")
+                                .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
+                                    .put("enum", JSONArray().put("read").put("list")))
                                 .put("required", JSONArray().put("action")).put("additionalProperties", false))))
                     modelTools.put(JSONObject().put("type", "function").put("function",
                         JSONObject().put("name", "agentnova_web_search")
@@ -1032,6 +1045,70 @@ class MainActivity : Activity() {
                                     addMessageView("Hasil pencarian", result, false)
                                     if (::status.isInitialized) status.text = ""
                                 }
+                            }
+                        }
+                    }.show()
+                return
+            }
+            if (name == "agentnova_selected_file") {
+                val action = args.optString("action")
+                if (action !in setOf("read", "list")) { Toast.makeText(this, "Aksi file tidak valid.", Toast.LENGTH_LONG).show(); return }
+                val selectedUri = prefs.getString("agentnova_selected_uri", "").orEmpty()
+                val selectedKind = prefs.getString("agentnova_selected_kind", "").orEmpty()
+                val selectedName = prefs.getString("agentnova_selected_name", "sumber terpilih").orEmpty()
+                if (selectedUri.isBlank() || (action == "read" && selectedKind != "file") || (action == "list" && selectedKind != "folder")) {
+                    Toast.makeText(this, "Pilih sumber yang sesuai melalui Tambah sumber terlebih dahulu.", Toast.LENGTH_LONG).show(); return
+                }
+                val description = if (action == "read") "Membaca maksimal 64 KB dari file '$selectedName'." else "Menampilkan maksimal 100 nama item folder '$selectedName'."
+                android.app.AlertDialog.Builder(this).setTitle("AI meminta akses file")
+                    .setMessage("$description\n\nHanya sumber yang kamu pilih melalui pemilih dokumen Android yang dapat diakses.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Izinkan sekali") { _, _ ->
+                        statusText("Membaca sumber terpilih…")
+                        thread {
+                            val result = try {
+                                val uri = Uri.parse(selectedUri)
+                                if (action == "read") {
+                                    val mime = contentResolver.getType(uri).orEmpty()
+                                    if (!(mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") || mime.contains("csv") || selectedName.endsWith(".md", true) || selectedName.endsWith(".kt", true) || selectedName.endsWith(".py", true) || selectedName.endsWith(".log", true))) {
+                                        "File bukan tipe teks yang didukung. MIME: " + mime.ifBlank { "tidak diketahui" }
+                                    } else {
+                                        val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                                            val out = java.io.ByteArrayOutputStream()
+                                            val buffer = ByteArray(4096)
+                                            var total = 0
+                                            while (true) {
+                                                val n = input.read(buffer)
+                                                if (n < 0) break
+                                                total += n
+                                                if (total > 65536) throw IllegalArgumentException("File melebihi batas 64 KB.")
+                                                out.write(buffer, 0, n)
+                                            }
+                                            out.toByteArray()
+                                        } ?: throw IllegalStateException("File tidak dapat dibaca.")
+                                        "Isi file '$selectedName':\n" + String(bytes, Charsets.UTF_8)
+                                    }
+                                } else {
+                                    val tree = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
+                                    val names = mutableListOf<String>()
+                                    contentResolver.query(tree, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                                        val col = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                                        while (cursor.moveToNext() && names.size < 100) if (col >= 0) names.add(cursor.getString(col))
+                                    }
+                                    "Isi folder '$selectedName' (maksimal 100 item):\n" + names.joinToString("\n").ifBlank { "(kosong)" }
+                                }
+                            } catch (e: Exception) { "Akses sumber gagal: " + (e.message ?: "kesalahan tidak diketahui") }
+                            runOnUiThread {
+                                val target = sessions.firstOrNull { it.optString("id") == originatingSessionId }
+                                if (target != null && assistantMessage != null && callId.isNotBlank()) {
+                                    val msgs = target.optJSONArray("messages") ?: JSONArray()
+                                    msgs.put(JSONObject(assistantMessage.toString()))
+                                    msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.take(12000)))
+                                    target.put("messages", msgs)
+                                    saveSessions()
+                                    continueAfterMcp(originatingSessionId, assistantMessage, callId, name, result)
+                                } else addMessageView("Hasil file", result, false)
+                                if (::status.isInitialized) status.text = ""
                             }
                         }
                     }.show()
