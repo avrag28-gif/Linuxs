@@ -134,7 +134,7 @@ object OpenAiCompatibleClient {
                     proposals.put(JSONObject().put("id", call.optString("id"))
                         .put("name", fn.optString("name"))
                         .put("arguments", args)
-                        .put("assistant_message", JSONObject(responseMessage.toString())))
+                        .put("assistant_message", JSONObject(responseMessage.toString()).put("role", "assistant")))
                 }
                 return "[AGENTNOVA_MCP_PROPOSALS]$proposals"
             }
