@@ -643,9 +643,19 @@ class MainActivity : Activity() {
             attachedName = name
             val mime = contentResolver.getType(uri).orEmpty()
             if (mime.startsWith("image/") && (mime == "image/jpeg" || mime == "image/png" || mime == "image/webp" || mime == "image/gif")) {
-                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: throw IllegalStateException("Gambar tidak dapat dibaca.")
-                if (bytes.size > 8 * 1024 * 1024) throw IllegalArgumentException("Ukuran gambar maksimal 8 MB.")
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > 8 * 1024 * 1024) throw IllegalArgumentException("Ukuran gambar maksimal 8 MB.")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } ?: throw IllegalStateException("Gambar tidak dapat dibaca.")
                 attachedImageData = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 attachedImageMime = mime
                 attachedText = "[Gambar terlampir: $name. Minta AI menganalisis gambar ini.]"
