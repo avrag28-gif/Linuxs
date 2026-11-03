@@ -559,7 +559,7 @@ class MainActivity : Activity() {
                     }
                 }
                 attachedText = "Daftar isi folder yang dipilih (hingga 100 item):\\n" +
-                    names.joinToString("\\n").ifBlank { "(Folder kosong atau daftar isi tidak dapat dibaca)" } +
+                    names.joinToString("\n").ifBlank { "(Folder kosong atau daftar isi tidak dapat dibaca)" } +
                     "\\n\\nCatatan: hanya nama item folder yang dilampirkan, bukan seluruh isi file."
                 showChat()
                 Toast.makeText(this, "Folder dipilih.", Toast.LENGTH_SHORT).show()
@@ -729,7 +729,7 @@ class MainActivity : Activity() {
                         if (code !in 200..299) throw IllegalStateException("MCP HTTP $code: ${raw.take(300)}")
                         if (notification || raw.isBlank()) return null
                         val jsonLine = raw.lineSequence()
-                            .map { it.trim() }
+                            .map { it.trim().removePrefix("data:").trim() }
                             .firstOrNull { it.startsWith("{") }
                             ?: throw IllegalStateException("Respons MCP bukan JSON/SSE yang dikenali.")
                         val response = JSONObject(jsonLine)
