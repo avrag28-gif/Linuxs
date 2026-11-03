@@ -1071,8 +1071,15 @@ class MainActivity : Activity() {
                     val targetMessages = target.optJSONArray("messages") ?: JSONArray()
                     if (assistantMessage != null && toolCallId.isNotBlank()) {
                         targetMessages.put(JSONObject(assistantMessage.toString()))
-                        targetMessages.put(JSONObject().put("role", "tool")
-                            .put("tool_call_id", toolCallId).put("content", output.take(12000)))
+                        if (ProviderRegistry.selected(this).id == "anthropic") {
+                            val resultBlock = JSONObject().put("type", "tool_result")
+                                .put("tool_use_id", toolCallId).put("content", output.take(12000))
+                            targetMessages.put(JSONObject().put("role", "user")
+                                .put("content", JSONArray().put(resultBlock)))
+                        } else {
+                            targetMessages.put(JSONObject().put("role", "tool")
+                                .put("tool_call_id", toolCallId).put("content", output.take(12000)))
+                        }
                     } else {
                         targetMessages.put(JSONObject().put("role", "assistant").put("content", resultForChat))
                     }
@@ -1131,11 +1138,15 @@ class MainActivity : Activity() {
         if (loading != null) targetView?.addView(loading)
         thread {
             val answer = try {
-                OpenAiCompatibleClient.chat(
-                    this, request, providerSnapshot = provider,
-                    apiKeySnapshot = key, baseUrlSnapshot = baseUrl,
-                    modelSnapshot = model, toolsSnapshot = null
-                )
+                if (provider.id == "anthropic") {
+                    AnthropicClient.chat(request, key, baseUrl, model, toolsSnapshot = null)
+                } else {
+                    OpenAiCompatibleClient.chat(
+                        this, request, providerSnapshot = provider,
+                        apiKeySnapshot = key, baseUrlSnapshot = baseUrl,
+                        modelSnapshot = model, toolsSnapshot = null
+                    )
+                }
             } catch (e: Exception) {
                 "Hasil MCP sudah diterima, tetapi jawaban lanjutan gagal: " + (e.message ?: "kesalahan koneksi")
             }
