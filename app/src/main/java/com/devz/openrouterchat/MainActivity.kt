@@ -526,7 +526,7 @@ class MainActivity : Activity() {
                 for (i in firstContextMessage until historySnapshot.length()) {
                     val item = JSONObject(historySnapshot.getJSONObject(i).toString())
                     val content = item.optString("content")
-                    if (content.length > 20000) item.put("content", content.take(100000) + "\\n[Konten dipotong untuk batas konteks.])
+                    if (content.length > 20000) item.put("content", content.take(20000) + "\n[Konten dipotong untuk batas konteks.]")
                     requestMessages.put(item)
                 }
                 // Format image payload for the selected provider vision API.
