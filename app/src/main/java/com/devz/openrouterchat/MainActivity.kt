@@ -509,11 +509,26 @@ class MainActivity : Activity() {
                     }
                 }
                 if (provider.id == "anthropic") {
+                    val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", "")) {
+                        try { JSONArray(prefs.getString("mcp_tools_json", "[]")) }
+                        catch (_: Exception) { JSONArray() }
+                    } else JSONArray()
+                    val claudeTools = JSONArray()
+                    for (index in 0 until catalog.length()) {
+                        val tool = catalog.optJSONObject(index) ?: continue
+                        val name = tool.optString("name").trim()
+                        if (name.isBlank()) continue
+                        claudeTools.put(JSONObject().put("name", name)
+                            .put("description", tool.optString("description", "MCP tool"))
+                            .put("input_schema", tool.optJSONObject("inputSchema") ?: JSONObject()
+                                .put("type", "object").put("properties", JSONObject())))
+                    }
                     AnthropicClient.chat(
                         messages = requestMessages,
                         apiKey = key,
                         baseUrl = baseUrl,
-                        model = model
+                        model = model,
+                        toolsSnapshot = claudeTools.takeIf { it.length() > 0 }
                     )
                 } else {
                     val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", "")) {
