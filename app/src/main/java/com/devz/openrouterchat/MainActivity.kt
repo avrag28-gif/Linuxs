@@ -400,6 +400,8 @@ class MainActivity : Activity() {
     private fun submit() {
         val provider = ProviderRegistry.selected(this)
         val key = ProviderRegistry.apiKey(this, provider).trim()
+        val baseUrl = ProviderRegistry.baseUrl(this, provider)
+        val model = ProviderRegistry.model(this, provider)
         val typedMessage = prompt.text.toString().trim()
         val message = buildString {
             append(typedMessage)
@@ -438,7 +440,13 @@ class MainActivity : Activity() {
                 for (i in 0 until historySnapshot.length()) {
                     requestMessages.put(JSONObject(historySnapshot.getJSONObject(i).toString()))
                 }
-                OpenAiCompatibleClient.chat(this, requestMessages)
+                OpenAiCompatibleClient.chat(
+                    this, requestMessages,
+                    providerSnapshot = provider,
+                    apiKeySnapshot = key,
+                    baseUrlSnapshot = baseUrl,
+                    modelSnapshot = model
+                )
             } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
             runOnUiThread {
                 requestMessagesView.removeView(loading)
