@@ -744,8 +744,11 @@ class MainActivity : Activity() {
         val uri = data?.data ?: return
         if (requestCode == REQ_FOLDER) {
             try {
-                contentResolver.takePersistableUriPermission(uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                val treeGrantFlags = (data.flags) and
+                    (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                if ((data.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION) != 0 && treeGrantFlags != 0) {
+                    contentResolver.takePersistableUriPermission(uri, treeGrantFlags)
+                }
                 prefs.edit().putString("agentnova_selected_uri", uri.toString())
                     .putString("agentnova_selected_kind", "folder")
                     .putString("agentnova_selected_name", "Folder dipilih").apply()
@@ -761,7 +764,7 @@ class MainActivity : Activity() {
                         if (nameIndex >= 0) names.add(cursor.getString(nameIndex))
                     }
                 }
-                attachedText = "Daftar isi folder yang dipilih (hingga 100 item):\\n" +
+                attachedText = "Daftar isi folder yang dipilih (hingga 500 item):\\n" +
                     names.joinToString("\n").ifBlank { "(Folder kosong atau daftar isi tidak dapat dibaca)" } +
                     "\\n\\nCatatan: hanya nama item folder yang dilampirkan, bukan seluruh isi file."
                 showChat()
