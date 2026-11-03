@@ -950,10 +950,14 @@ class MainActivity : Activity() {
             val allowed = (0 until catalog.length()).any { catalog.optJSONObject(it)?.optString("name") == name }
             if (!allowed) { Toast.makeText(this, "Tool tidak ada dalam katalog MCP.", Toast.LENGTH_LONG).show(); return }
             val args = proposal.optJSONObject("arguments") ?: JSONObject()
+            val callId = proposal.optString("id")
+            val assistantMessage = proposal.optJSONObject("assistant_message")
             android.app.AlertDialog.Builder(this).setTitle("AI meminta izin MCP")
                 .setMessage("Tool: $name\nArgumen:\n${args.toString(2).take(2400)}\n\nTool eksternal dapat membaca atau mengubah data. Jalankan hanya jika kamu percaya server dan argumennya.")
                 .setNegativeButton("Batal", null)
-                .setPositiveButton("Setujui & jalankan") { _, _ -> executeMcpTool(name, args) }
+                .setPositiveButton("Setujui & jalankan") { _, _ ->
+                    executeMcpTool(name, args, callId, assistantMessage)
+                }
                 .show()
             return
         }
@@ -986,7 +990,7 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun executeMcpTool(toolName: String, arguments: JSONObject) {
+    private fun executeMcpTool(toolName: String, arguments: JSONObject, toolCallId: String = "", assistantMessage: JSONObject? = null) {
         val endpoint = prefs.getString("mcp_url", "").orEmpty().trim()
         val parsed = try { URL(endpoint) } catch (_: Exception) { null }
         if (parsed == null || (parsed.protocol != "https" && parsed.protocol != "http")) {
@@ -1058,6 +1062,78 @@ class MainActivity : Activity() {
                 }
                 android.app.AlertDialog.Builder(this).setTitle("Hasil MCP tool")
                     .setMessage(output.take(10000)).setPositiveButton("Tutup", null).show()
+                if (assistantMessage != null && toolCallId.isNotBlank() && !output.startsWith("MCP tool gagal:")) {
+                    continueAfterMcp(executionSessionId, assistantMessage, toolCallId, toolName, output)
+                }
+            }
+        }
+    }
+
+    /** Send the approved tool result back using the OpenAI tool-call conversation protocol. */
+    private fun continueAfterMcp(
+        sessionId: String,
+        assistantMessage: JSONObject,
+        toolCallId: String,
+        toolName: String,
+        toolOutput: String
+    ) {
+        val provider = ProviderRegistry.selected(this)
+        if (provider.id == "anthropic") {
+            Toast.makeText(this, "Hasil MCP tersimpan. Lanjutan otomatis untuk Claude akan ditambahkan pada integrasi native.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val key = ProviderRegistry.apiKey(this, provider).trim()
+        val baseUrl = ProviderRegistry.baseUrl(this, provider)
+        val model = ProviderRegistry.model(this, provider)
+        val session = sessions.firstOrNull { it.optString("id") == sessionId } ?: return
+        val history = session.optJSONArray("messages") ?: JSONArray()
+        val request = JSONArray()
+        request.put(JSONObject().put("role", "system").put("content",
+            "Kamu adalah AgentNova. Tool MCP yang telah disetujui pengguna sudah dijalankan. " +
+            "Gunakan hasil tool berikut untuk menjawab permintaan awal secara jelas. Jangan mengklaim tindakan lain yang belum dilakukan."))
+        val start = (history.length() - 40).coerceAtLeast(0)
+        for (i in start until history.length()) {
+            val item = history.optJSONObject(i) ?: continue
+            if (item.optString("role") == "assistant" &&
+                item.optString("content").startsWith("Saya mengusulkan penggunaan MCP tool")) continue
+            request.put(JSONObject(item.toString()))
+        }
+        request.put(JSONObject(assistantMessage.toString()))
+        request.put(JSONObject().put("role", "tool")
+            .put("tool_call_id", toolCallId).put("content", toolOutput.take(12000)))
+        if (provider.requiresKey && key.isBlank()) {
+            Toast.makeText(this, "API key provider belum tersedia untuk jawaban lanjutan.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (model.isBlank()) return
+        statusText("AI membaca hasil MCP…")
+        val targetView = if (currentSessionId == sessionId) messagesView else null
+        val loading = targetView?.let { messageCard("AgentNova", "Menyusun jawaban dari hasil MCP…", false) }
+        if (loading != null) targetView?.addView(loading)
+        thread {
+            val answer = try {
+                OpenAiCompatibleClient.chat(
+                    this, request, providerSnapshot = provider,
+                    apiKeySnapshot = key, baseUrlSnapshot = baseUrl,
+                    modelSnapshot = model, toolsSnapshot = null
+                )
+            } catch (e: Exception) {
+                "Hasil MCP sudah diterima, tetapi jawaban lanjutan gagal: " + (e.message ?: "kesalahan koneksi")
+            }
+            runOnUiThread {
+                if (loading != null && targetView != null) targetView.removeView(loading)
+                val latest = sessions.firstOrNull { it.optString("id") == sessionId }
+                if (latest != null) {
+                    val msgs = latest.optJSONArray("messages") ?: JSONArray()
+                    msgs.put(JSONObject().put("role", "assistant").put("content", answer))
+                    latest.put("messages", msgs)
+                    saveSessions()
+                    if (currentSessionId == sessionId) {
+                        addMessageView("AgentNova", answer, false)
+                        if (::status.isInitialized) status.text = ""
+                        if (::sendButton.isInitialized) sendButton.isEnabled = true
+                    }
+                }
             }
         }
     }
