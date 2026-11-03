@@ -1141,7 +1141,18 @@ class MainActivity : Activity() {
                                         val bytes = contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
                                             java.io.FileInputStream(pfd.fileDescriptor).use { input ->
                                                 val channel = input.channel
-                                                if (channel.position(offset) != offset) throw IllegalStateException("Tidak dapat berpindah ke posisi byte yang diminta.")
+                                                val seeked = try { channel.position(offset); true } catch (_: Exception) { false }
+                                                if (!seeked) {
+                                                    var remaining = offset
+                                                    while (remaining > 0L) {
+                                                        val skipped = input.skip(remaining)
+                                                        if (skipped > 0L) remaining -= skipped else {
+                                                            if (input.read() < 0) break
+                                                            remaining--
+                                                        }
+                                                    }
+                                                    if (remaining > 0L) throw IllegalArgumentException("Offset berada di luar data yang tersedia.")
+                                                }
                                                 val buffer = ByteArray(chunkSize)
                                                 val out = java.io.ByteArrayOutputStream(chunkSize)
                                                 while (out.size() < chunkSize) {
@@ -1161,7 +1172,7 @@ class MainActivity : Activity() {
                                         val nextOffset = offset + bytes.size
                                         val hasMore = if (fileSize >= 0L) nextOffset < fileSize else bytes.size == chunkSize
                                         val sizeLabel = if (fileSize >= 0L) "ukuran total $fileSize byte" else "ukuran total tidak dilaporkan penyedia"
-                                        "Potongan file '$selectedName' (offset $offset, \${bytes.size} byte, $sizeLabel):\n" + decoded +
+                                        "Potongan file '$selectedName' (offset $offset, ${bytes.size} byte, $sizeLabel):\n" + decoded +
                                             if (hasMore) "\n[Bagian berikutnya: action=read, offset=$nextOffset, length=8192]" else "\n[SELESAI: akhir file tercapai.]"
                                     }
                                 } else {
