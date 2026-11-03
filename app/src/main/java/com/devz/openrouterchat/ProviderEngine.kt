@@ -163,6 +163,7 @@ object AnthropicClient {
         apiKey: String,
         baseUrl: String,
         model: String,
+        toolsSnapshot: JSONArray? = null,
         connectTimeoutMs: Int = 20000,
         readTimeoutMs: Int = 90000
     ): String {
@@ -189,6 +190,7 @@ object AnthropicClient {
             .put("max_tokens", 4096)
             .put("messages", conversation)
         if (systemParts.isNotEmpty()) body.put("system", systemParts.joinToString("\n\n"))
+        if (toolsSnapshot != null && toolsSnapshot.length() > 0) body.put("tools", toolsSnapshot)
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMs
@@ -211,6 +213,20 @@ object AnthropicClient {
                 throw IllegalStateException("Anthropic HTTP $code: ${detail.take(700)}")
             }
             val blocks = JSONObject(raw).optJSONArray("content") ?: JSONArray()
+            val toolUses = (0 until blocks.length()).mapNotNull { index ->
+                blocks.optJSONObject(index)?.takeIf { it.optString("type") == "tool_use" }
+            }
+            if (toolUses.isNotEmpty()) {
+                val proposals = JSONArray()
+                toolUses.forEach { use ->
+                    proposals.put(JSONObject().put("id", use.optString("id"))
+                        .put("name", use.optString("name"))
+                        .put("arguments", use.optJSONObject("input") ?: JSONObject())
+                        .put("assistant_message", JSONObject().put("role", "assistant")
+                            .put("content", JSONArray(blocks.toString()))))
+                }
+                return "[AGENTNOVA_MCP_PROPOSALS]$proposals"
+            }
             val answer = (0 until blocks.length()).mapNotNull { index ->
                 blocks.optJSONObject(index)?.takeIf { it.optString("type") == "text" }
                     ?.optString("text")?.takeIf { it.isNotBlank() }
