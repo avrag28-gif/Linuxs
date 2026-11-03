@@ -1,8 +1,14 @@
 package com.devz.openrouterchat
 
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.os.Bundle
 import android.content.Context
+import android.content.Intent
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.util.Rational
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,6 +22,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -42,6 +49,11 @@ class MainActivity : Activity() {
     private lateinit var keyField: EditText
     private lateinit var memoryField: EditText
     private lateinit var modelSpinner: Spinner
+    private lateinit var mcpField: EditText
+    private var attachedText = ""
+    private var attachedName = ""
+    private var webContext = ""
+    private val REQ_FILE = 101
     private var drawerOpen = false
     private var showKey = false
     private var sessions = mutableListOf<JSONObject>()
@@ -121,7 +133,7 @@ class MainActivity : Activity() {
         val logoLp = LinearLayout.LayoutParams(dp(34), dp(34)); logoLp.leftMargin = dp(12)
         top.addView(logo, logoLp)
         val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), 0, 0, 0) }
-        brand.addView(label("NOVA AI", 17f, primary, true))
+        brand.addView(label("AgentNova", 17f, primary, true))
         brand.addView(label("Chat", 11f, muted))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         val new = label("+", 26f, primary, true).apply {
@@ -164,10 +176,10 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER; background = solid(accent, 7)
         }
         head.addView(logo, LinearLayout.LayoutParams(dp(36), dp(36)))
-        val name = label("NOVA AI", 18f, primary, true).apply { setPadding(dp(10), 0, 0, 0) }
+        val name = label("AgentNova", 18f, primary, true).apply { setPadding(dp(10), 0, 0, 0) }
         head.addView(name)
         drawer.addView(head)
-        drawer.addView(label("SIMPLE AI CHAT", 10f, muted, true).apply {
+        drawer.addView(label("AI AGENT", 10f, muted, true).apply {
             setPadding(0, dp(8), 0, dp(22))
         })
         drawer.addView(drawerButton("+   Chat baru") { newSession() })
@@ -223,6 +235,11 @@ class MainActivity : Activity() {
 
     private fun showChat() {
         page.removeAllViews()
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        actions.addView(toolChip("＋ File") { pickFile() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(5) })
+        actions.addView(toolChip("Web") { webSearch() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(3); rightMargin = dp(3) })
+        actions.addView(toolChip("Tools") { showTools() }, LinearLayout.LayoutParams(0, dp(38), 1f).apply { leftMargin = dp(5) })
+        page.addView(actions, LinearLayout.LayoutParams(-1, -2))
         val history = ScrollView(this).apply { clipToPadding = false }
         messagesView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -244,7 +261,7 @@ class MainActivity : Activity() {
             }
         }
         history.addView(messagesView)
-        page.addView(history, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(history, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(10) })
         val composer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = solid(panel, 9)
@@ -259,6 +276,7 @@ class MainActivity : Activity() {
             background = null
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
+        if (attachedName.isNotBlank()) composer.addView(label("📎 $attachedName", 11f, muted).apply { setPadding(0, 0, 0, dp(7)) })
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         status = label(if (prefs.getString("api_key", "").isNullOrBlank()) "Tambahkan API key di Pengaturan" else "", 11f, muted)
         row.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
@@ -322,7 +340,27 @@ class MainActivity : Activity() {
         body.addView(label("Model yang dipilih dipakai untuk chat baru dan berikutnya.", 11f, muted).apply {
             setPadding(0, dp(5), 0, dp(8))
         })
-        body.addView(section("MEMORI NOVA"))
+        body.addView(section("MCP SERVER"))
+        mcpField = EditText(this).apply {
+            hint = "URL endpoint MCP (HTTP)"
+            setText(prefs.getString("mcp_url", ""))
+            setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7)
+        }
+        body.addView(mcpField, fieldLp())
+        val mcpRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        mcpRow.addView(smallButton("Simpan MCP") {
+            prefs.edit().putString("mcp_url", mcpField.text.toString().trim()).apply()
+            Toast.makeText(this, "Endpoint MCP disimpan.", Toast.LENGTH_SHORT).show()
+        }, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(5) })
+        mcpRow.addView(smallButton("Tes / daftar tools") { discoverMcpTools(mcpField.text.toString().trim()) },
+            LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
+        body.addView(mcpRow)
+        body.addView(label(prefs.getString("mcp_tools", "Belum ada daftar tools MCP.") ?: "", 11f, muted).apply {
+            setPadding(0, dp(8), 0, dp(8))
+        })
+        body.addView(section("MEMORI AgentNova"))
         body.addView(label("Simpan hal penting agar bisa dipakai di percakapan berikutnya.", 12f, muted).apply {
             setPadding(0, 0, 0, dp(8))
         })
@@ -369,12 +407,17 @@ class MainActivity : Activity() {
 
     private fun submit() {
         val key = prefs.getString("api_key", "").orEmpty().trim()
-        val message = prompt.text.toString().trim()
+        val typedMessage = prompt.text.toString().trim()
+        val message = buildString {
+            append(typedMessage)
+            if (attachedText.isNotBlank()) append("\n\n[File terlampir: $attachedName]\n$attachedText")
+            if (webContext.isNotBlank()) append("\n\n$webContext")
+        }
         if (key.isEmpty()) {
             Toast.makeText(this, "Masukkan API key di Pengaturan.", Toast.LENGTH_SHORT).show()
             showSettings(); return
         }
-        if (message.isEmpty()) { prompt.error = "Tulis pesan"; return }
+        if (typedMessage.isEmpty() && attachedText.isBlank() && webContext.isBlank()) { prompt.error = "Tulis pesan"; return }
         val session = currentSession()
         val arr = sessionMessages()
         arr.put(JSONObject().put("role", "user").put("content", message))
@@ -383,6 +426,7 @@ class MainActivity : Activity() {
         saveSessions()
         addMessageView("Kamu", message, true)
         prompt.setText("")
+        attachedText = ""; attachedName = ""; webContext = ""
         sendButton.isEnabled = false
         status.text = "Menunggu jawaban..."
         buildDrawer()
@@ -398,7 +442,7 @@ class MainActivity : Activity() {
                     setRequestProperty("Authorization", "Bearer $key")
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("HTTP-Referer", "https://github.com/avrag28-gif/Linuxs")
-                    setRequestProperty("X-Title", "NOVA AI")
+                    setRequestProperty("X-Title", "AgentNova")
                 }
                 val requestMessages = JSONArray()
                 if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system")
@@ -475,6 +519,180 @@ class MainActivity : Activity() {
         setColor(color)
         // Subtle glass-like edge: solid palette, no gradient.
         setStroke(dp(1), Color.argb(38, 235, 241, 255))
+    }
+
+
+    private fun toolChip(text: String, action: () -> Unit) =
+        label(text, 12f, primary, true).apply {
+            gravity = Gravity.CENTER
+            background = solid(panel, 8)
+            setOnClickListener { action() }
+        }
+
+    private fun pickFile() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        startActivityForResult(intent, REQ_FILE)
+    }
+
+    @Deprecated("Deprecated in Android API but supported for this activity")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_FILE || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            val name = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "file")
+            attachedName = name
+            val mime = contentResolver.getType(uri).orEmpty()
+            attachedText = if (mime.startsWith("text/") || mime.contains("json") ||
+                mime.contains("xml") || mime.contains("csv") || name.endsWith(".md", true) ||
+                name.endsWith(".kt", true) || name.endsWith(".py", true) || name.endsWith(".log", true)) {
+                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(80000) }.orEmpty()
+            } else {
+                "[File dipilih: $name, tipe: ${mime.ifBlank { "tidak diketahui" }}. Konten biner belum diekstrak.]"
+            }
+            showChat()
+            Toast.makeText(this, "File ditambahkan: $name", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Gagal membaca file: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) return it.getString(0)
+        }
+        return null
+    }
+
+    private fun webSearch() {
+        val input = EditText(this).apply {
+            hint = "Apa yang ingin dicari di web?"
+            setTextColor(primary); setHintTextColor(muted)
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Pencarian web")
+            .setView(input)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Cari", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val q = input.text.toString().trim()
+                if (q.isBlank()) { input.error = "Masukkan kata kunci"; return@setOnClickListener }
+                dialog.dismiss()
+                statusText("Mencari di web…")
+                thread {
+                    val result = try {
+                        val url = URL("https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(q, "UTF-8"))
+                        val c = (url.openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15000; readTimeout = 20000
+                            setRequestProperty("User-Agent", "Mozilla/5.0 AgentNova Android")
+                        }
+                        try {
+                            val html = c.inputStream.bufferedReader().use { it.readText() }
+                            val anchors = Regex("(?is)<a[^>]*class=[\"'][^\"']*result__a[^\"']*[\"'][^>]*>(.*?)</a>")
+                            val snippets = Regex("(?is)<a[^>]*class=[\"'][^\"']*result__snippet[^\"']*[\"'][^>]*>(.*?)</a>")
+                            val titles = anchors.findAll(html).take(6).map { it.groupValues[1].replace(Regex("<[^>]+>"), "").htmlUnescape().trim() }.toList()
+                            val descs = snippets.findAll(html).take(6).map { it.groupValues[1].replace(Regex("<[^>]+>"), "").htmlUnescape().trim() }.toList()
+                            if (titles.isEmpty()) "Tidak ada hasil yang bisa dibaca. Coba kata kunci lain." else
+                                titles.mapIndexed { i, t -> "${i + 1}. $t" + (descs.getOrNull(i)?.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "") }.joinToString("\n\n")
+                        } finally { c.disconnect() }
+                    } catch (e: Exception) { "Pencarian web gagal: ${e.message}" }
+                    runOnUiThread {
+                        webContext = "Hasil pencarian web untuk: $q\n$result"
+                        if (::prompt.isInitialized) prompt.setText("Rangkum dan jelaskan hasil pencarian web tentang: $q")
+                        if (::status.isInitialized) status.text = "Hasil web siap dilampirkan"
+                        Toast.makeText(this, "Hasil pencarian disiapkan untuk AgentNova.", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun String.htmlUnescape(): String = replace("&amp;", "&").replace("&quot;", "\"")
+        .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">").replace("&nbsp;", " ")
+
+    private fun statusText(text: String) {
+        if (::status.isInitialized) status.text = text
+        else Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showTools() {
+        val options = arrayOf("Mode melayang (PiP)", "Buka kamera", "Volume media", "Pengaturan Android", "Pengaturan AgentNova")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Tools AgentNova")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> enterFloatingMode()
+                    1 -> {
+                        try { startActivity(Intent("android.media.action.IMAGE_CAPTURE")) }
+                        catch (_: Exception) { Toast.makeText(this, "Aplikasi kamera tidak tersedia.", Toast.LENGTH_SHORT).show() }
+                    }
+                    2 -> volumeDialog()
+                    3 -> try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+                        catch (_: Exception) { Toast.makeText(this, "Pengaturan tidak tersedia.", Toast.LENGTH_SHORT).show() }
+                    4 -> showSettings()
+                }
+            }.show()
+    }
+
+    private fun enterFloatingMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val params = PictureInPictureParams.Builder().setAspectRatio(Rational(9, 16)).build()
+                enterPictureInPictureMode(params)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Mode melayang tidak didukung perangkat ini.", Toast.LENGTH_SHORT).show()
+            }
+        } else Toast.makeText(this, "Mode PiP memerlukan Android 8.0 atau lebih baru.", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun volumeDialog() {
+        val audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val row = LinearLayout(this).apply { gravity = Gravity.CENTER; setPadding(dp(8), dp(8), dp(8), dp(8)) }
+        row.addView(smallButton("−") { audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_LOWER, AudioManager.FLAG_SHOW_UI) })
+        row.addView(label("  Volume media  ", 14f, primary, true))
+        row.addView(smallButton("+") { audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_RAISE, AudioManager.FLAG_SHOW_UI) })
+        android.app.AlertDialog.Builder(this).setTitle("Kontrol volume").setView(row).setPositiveButton("Selesai", null).show()
+    }
+
+    private fun discoverMcpTools(endpoint: String) {
+        if (endpoint.isBlank()) {
+            Toast.makeText(this, "Masukkan URL endpoint MCP terlebih dahulu.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        prefs.edit().putString("mcp_url", endpoint).apply()
+        Toast.makeText(this, "Menghubungi MCP…", Toast.LENGTH_SHORT).show()
+        thread {
+            val result = try {
+                val c = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"; connectTimeout = 12000; readTimeout = 20000; doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Accept", "application/json, text/event-stream")
+                }
+                try {
+                    val body = JSONObject().put("jsonrpc", "2.0").put("id", 1)
+                        .put("method", "tools/list").put("params", JSONObject()).toString()
+                    c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                    val code = c.responseCode
+                    val raw = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) "MCP HTTP $code: ${raw.take(250)}" else {
+                        val jsonText = raw.lineSequence().firstOrNull { it.trim().startsWith("{") } ?: raw
+                        val tools = JSONObject(jsonText).optJSONObject("result")?.optJSONArray("tools")
+                        if (tools == null) "Terhubung, tetapi respons tools/list tidak dikenali." else
+                            (0 until tools.length()).mapNotNull { i -> tools.optJSONObject(i)?.optString("name") }
+                                .joinToString(", ").ifBlank { "Terhubung; server belum menyediakan tools." }
+                    }
+                } finally { c.disconnect() }
+            } catch (e: Exception) { "MCP gagal: ${e.message}" }
+            prefs.edit().putString("mcp_tools", result).apply()
+            runOnUiThread { Toast.makeText(this, result.take(180), Toast.LENGTH_LONG).show() }
+        }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
