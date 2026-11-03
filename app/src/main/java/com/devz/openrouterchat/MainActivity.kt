@@ -472,6 +472,8 @@ class MainActivity : Activity() {
                         "Jangan mengaku telah membuka aplikasi, mengubah pengaturan, mengakses kamera, menjalankan MCP, " +
                         "atau melakukan tindakan perangkat jika tindakan itu belum benar-benar dijalankan melalui UI aplikasi. " +
                         "Jika diminta melakukan tindakan yang belum didukung, jelaskan keterbatasannya dan berikan langkah manual. " +
+                        "Gunakan MCP hanya jika relevan dengan permintaan pengguna, jangan pernah mengklaim tool sudah berjalan sebelum hasil diterima. " +
+                        "Ajukan maksimal satu MCP tool call per giliran; jangan membuat beberapa tindakan sekaligus. " +
                         "Jaga privasi pengguna dan jangan meminta API key atau kata sandi di dalam percakapan."
                 ))
                 if (memory.isNotBlank()) requestMessages.put(JSONObject().put(
