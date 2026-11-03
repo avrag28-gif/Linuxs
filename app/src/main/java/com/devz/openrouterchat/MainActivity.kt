@@ -724,12 +724,12 @@ class MainActivity : Activity() {
         val isAccent = color == accent
         val topAlpha = if (isAccent) 238 else 188
         val bottomAlpha = if (isAccent) 212 else 142
+        setOrientation(GradientDrawable.Orientation.TOP_BOTTOM)
         setColors(
             intArrayOf(
                 Color.argb(topAlpha, Color.red(color), Color.green(color), Color.blue(color)),
                 Color.argb(bottomAlpha, Color.red(color), Color.green(color), Color.blue(color))
-            ),
-            GradientDrawable.Orientation.TOP_BOTTOM
+            )
         )
         // Translucent layered surface and a fine highlight create a glass-like finish.
         setStroke(dp(1), Color.argb(if (isAccent) 92 else 66, 226, 236, 255))
