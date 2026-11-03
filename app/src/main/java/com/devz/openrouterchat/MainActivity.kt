@@ -436,9 +436,30 @@ class MainActivity : Activity() {
         thread {
             val answer = try {
                 val requestMessages = JSONArray()
-                if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system").put("content", "Informasi memori pengguna yang boleh digunakan untuk personalisasi: " + memory))
-                for (i in 0 until historySnapshot.length()) {
-                    requestMessages.put(JSONObject(historySnapshot.getJSONObject(i).toString()))
+                requestMessages.put(JSONObject().put(
+                    "role", "system"
+                ).put(
+                    "content",
+                    "Kamu adalah AgentNova, asisten AI di Android. Jawab sesuai kemampuan yang benar-benar tersedia. " +
+                        "Jangan mengaku telah membuka aplikasi, mengubah pengaturan, mengakses kamera, menjalankan MCP, " +
+                        "atau melakukan tindakan perangkat jika tindakan itu belum benar-benar dijalankan melalui UI aplikasi. " +
+                        "Jika diminta melakukan tindakan yang belum didukung, jelaskan keterbatasannya dan berikan langkah manual. " +
+                        "Jaga privasi pengguna dan jangan meminta API key atau kata sandi di dalam percakapan."
+                ))
+                if (memory.isNotBlank()) requestMessages.put(JSONObject().put(
+                    "role", "system"
+                ).put(
+                    "content",
+                    "Informasi memori pengguna yang boleh digunakan untuk personalisasi: " + memory.take(6000)
+                ))
+                // Bound request context so long-running chats cannot grow requests indefinitely.
+                // Keep the latest 40 messages; older messages remain saved in local chat history.
+                val firstContextMessage = (historySnapshot.length() - 40).coerceAtLeast(0)
+                for (i in firstContextMessage until historySnapshot.length()) {
+                    val item = JSONObject(historySnapshot.getJSONObject(i).toString())
+                    val content = item.optString("content")
+                    if (content.length > 20000) item.put("content", content.take(20000) + "\\n[Konten dipotong untuk batas konteks.]")
+                    requestMessages.put(item)
                 }
                 if (provider.id == "anthropic") {
                     AnthropicClient.chat(
