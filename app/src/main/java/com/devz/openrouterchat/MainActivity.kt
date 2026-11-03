@@ -573,8 +573,8 @@ class MainActivity : Activity() {
                         .put("input_schema", JSONObject().put("type", "object")
                             .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                 .put("enum", JSONArray().put("read").put("list")))
-                                .put("offset", JSONObject().put("type", "integer").put("description", "Starting byte offset; default 0"))
-                                .put("length", JSONObject().put("type", "integer").put("description", "Chunk byte length, maximum 8192; default 8192")))
+                                .put("offset", JSONObject().put("type", "integer").put("description", "For read: byte offset; for list: item index. Default 0"))
+                                .put("length", JSONObject().put("type", "integer").put("description", "For read: chunk bytes, maximum 8192; for list: page items, maximum 200")))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_web_search")
                         .put("description", "Cari informasi publik di web untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
@@ -1177,12 +1177,22 @@ class MainActivity : Activity() {
                                     }
                                 } else {
                                     val tree = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
+                                    val itemOffset = args.optInt("offset", 0).coerceIn(0, 100000)
+                                    val pageSize = args.optInt("length", 100).coerceIn(1, 200)
                                     val names = mutableListOf<String>()
+                                    var seen = 0
+                                    var hasMore = false
                                     contentResolver.query(tree, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
                                         val col = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                                        while (cursor.moveToNext() && names.size < 100000) if (col >= 0) names.add(cursor.getString(col))
+                                        while (cursor.moveToNext() && seen < 100000) {
+                                            if (seen++ < itemOffset) continue
+                                            if (names.size >= pageSize) { hasMore = true; break }
+                                            if (col >= 0) names.add(cursor.getString(col))
+                                        }
                                     }
-                                    "Isi folder '$selectedName' (maksimal 100.000 item):\n" + names.joinToString("\n").ifBlank { "(kosong)" }
+                                    val nextOffset = itemOffset + names.size
+                                    "Isi folder " + selectedName + " (maksimal 100.000 item; posisi " + itemOffset + "):\n" + names.joinToString("\n").ifBlank { "(kosong)" } +
+                                        if (hasMore && nextOffset < 100000) "\n[Halaman berikutnya: action=list, offset=" + nextOffset + ", length=" + pageSize + "]" else "\n[SELESAI: akhir daftar atau batas 100.000 item.]"
                                 }
                             } catch (e: Exception) { "Akses sumber gagal: " + (e.message ?: "kesalahan tidak diketahui") }
                             runOnUiThread {
