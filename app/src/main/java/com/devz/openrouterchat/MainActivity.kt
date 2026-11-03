@@ -654,17 +654,28 @@ class MainActivity : Activity() {
         android.app.AlertDialog.Builder(this)
             .setTitle("Tools AgentNova")
             .setItems(options) { _, which ->
-                when (which) {
-                    0 -> enterFloatingMode()
-                    1 -> {
-                        try { startActivity(Intent("android.media.action.IMAGE_CAPTURE")) }
-                        catch (_: Exception) { Toast.makeText(this, "Aplikasi kamera tidak tersedia.", Toast.LENGTH_SHORT).show() }
-                    }
-                    2 -> volumeDialog()
-                    3 -> try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
-                        catch (_: Exception) { Toast.makeText(this, "Pengaturan tidak tersedia.", Toast.LENGTH_SHORT).show() }
-                    4 -> showSettings()
-                }
+                val descriptions = arrayOf(
+                    "AgentNova akan masuk ke jendela Picture-in-Picture.",
+                    "AgentNova akan membuka aplikasi kamera. Pengambilan foto tetap dilakukan di aplikasi kamera.",
+                    "AgentNova akan menampilkan kontrol volume media Android.",
+                    "AgentNova akan membuka halaman Pengaturan Android.",
+                    "AgentNova akan membuka halaman pengaturan internal."
+                )
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("Konfirmasi tindakan")
+                    .setMessage(descriptions[which])
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Lanjutkan") { _, _ ->
+                        when (which) {
+                            0 -> enterFloatingMode()
+                            1 -> try { startActivity(Intent("android.media.action.IMAGE_CAPTURE")) }
+                                catch (_: Exception) { Toast.makeText(this, "Aplikasi kamera tidak tersedia.", Toast.LENGTH_SHORT).show() }
+                            2 -> volumeDialog()
+                            3 -> try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+                                catch (_: Exception) { Toast.makeText(this, "Pengaturan tidak tersedia.", Toast.LENGTH_SHORT).show() }
+                            4 -> showSettings()
+                        }
+                    }.show()
             }.show()
     }
 
