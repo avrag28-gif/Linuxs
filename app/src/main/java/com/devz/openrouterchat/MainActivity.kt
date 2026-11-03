@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.os.Build
 import android.util.Rational
 import android.graphics.Color
@@ -54,6 +55,7 @@ class MainActivity : Activity() {
     private var attachedName = ""
     private var webContext = ""
     private val REQ_FILE = 101
+    private val REQ_FOLDER = 102
     private var drawerOpen = false
     private var showKey = false
     private var sessions = mutableListOf<JSONObject>()
@@ -530,18 +532,54 @@ class MainActivity : Activity() {
         }
 
     private fun pickFile() {
-        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "*/*"
-        }
-        startActivityForResult(intent, REQ_FILE)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Tambah sumber")
+            .setItems(arrayOf("Pilih file", "Pilih folder")) { _, which ->
+                if (which == 0) {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "*/*"
+                    }
+                    startActivityForResult(intent, REQ_FILE)
+                } else {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+                    startActivityForResult(intent, REQ_FOLDER)
+                }
+            }.show()
     }
 
     @Deprecated("Deprecated in Android API but supported for this activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQ_FILE || resultCode != RESULT_OK) return
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
+        if (requestCode == REQ_FOLDER) {
+            try {
+                contentResolver.takePersistableUriPermission(uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                attachedName = "Folder dipilih"
+                val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(uri,
+                    DocumentsContract.getTreeDocumentId(uri))
+                val names = mutableListOf<String>()
+                contentResolver.query(childUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
+                    null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    while (cursor.moveToNext() && names.size < 100) {
+                        if (nameIndex >= 0) names.add(cursor.getString(nameIndex))
+                    }
+                }
+                attachedText = "Daftar isi folder yang dipilih (hingga 100 item):\\n" +
+                    names.joinToString("\\n").ifBlank { "(Folder kosong atau daftar isi tidak dapat dibaca)" } +
+                    "\\n\\nCatatan: hanya nama item folder yang dilampirkan, bukan seluruh isi file."
+                showChat()
+                Toast.makeText(this, "Folder dipilih.", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Tidak bisa membaca folder: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode != REQ_FILE) return
         try {
             val name = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "file")
             attachedName = name
