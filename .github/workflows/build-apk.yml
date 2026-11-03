@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build and Verify Android APK
 on:
   workflow_dispatch:
   push:
@@ -6,6 +6,7 @@ on:
       - 'app/**'
       - 'build.gradle.kts'
       - 'settings.gradle.kts'
+      - '.github/workflows/build-apk.yml'
 permissions:
   contents: read
 jobs:
@@ -14,21 +15,74 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
       - name: Build debug APK
-        run: gradle --no-daemon assembleDebug
-      - name: Upload APK
+        run: gradle --no-daemon clean assembleDebug
+
+      - name: Verify APK structure, package, alignment and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)"
+          echo "Using Android build tools: $BUILD_TOOLS"
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          BADGING="$("$BUILD_TOOLS/aapt" dump badging "$APK")"
+          echo "$BADGING"
+          echo "$BADGING" | grep -F "package: name='com.devz.agentnova'"
+          echo "$BADGING" | grep -F "sdkVersion:'23'"
+          python3 - <<'PY'
+          import zipfile
+          p = "app/build/outputs/apk/debug/app-debug.apk"
+          with zipfile.ZipFile(p) as z:
+              bad = z.testzip()
+              assert bad is None, f"Corrupt ZIP entry: {bad}"
+              names = set(z.namelist())
+              assert "classes.dex" in names, "classes.dex missing"
+              assert "AndroidManifest.xml" in names, "Manifest missing"
+          print("APK ZIP integrity: PASS")
+          PY
+
+      - name: Install APK on Android 13 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          script: |
+            set -euo pipefail
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm path com.devz.agentnova
+            adb shell monkey -p com.devz.agentnova 1
+            sleep 5
+            adb logcat -d -t 2500 > /tmp/agentnova-logcat.txt
+            if grep -E "FATAL EXCEPTION|INSTALL_FAILED" /tmp/agentnova-logcat.txt; then
+              echo "Detected install or startup failure"
+              exit 1
+            fi
+            echo "Android 13 install and launch smoke test: PASS"
+
+      - name: Upload verified APK
         uses: actions/upload-artifact@v4
         with:
-          name: AgentNova-debug-apk
+          name: AgentNova-verified-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
