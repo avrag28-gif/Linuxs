@@ -575,7 +575,7 @@ class MainActivity : Activity() {
             runOnUiThread {
                 requestMessagesView.removeView(loading)
                 val finalAnswer = if (answer.startsWith("[AGENTNOVA_MCP_PROPOSALS]")) {
-                    confirmMcpProposals(answer.removePrefix("[AGENTNOVA_MCP_PROPOSALS]"))
+                    confirmMcpProposals(answer.removePrefix("[AGENTNOVA_MCP_PROPOSALS]"), requestSessionId)
                     "Saya mengusulkan penggunaan MCP tool. Periksa nama tool dan argumennya, lalu setujui atau batalkan sebelum tool dijalankan."
                 } else answer
                 val destination = sessions.firstOrNull { it.optString("id") == requestSessionId }
@@ -964,7 +964,7 @@ class MainActivity : Activity() {
 
 
     /** Validate AI-proposed calls against discovered MCP schemas, then ask approval. */
-    private fun confirmMcpProposals(raw: String) {
+    private fun confirmMcpProposals(raw: String, originatingSessionId: String = currentSessionId) {
         val proposals = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
         if (proposals.length() == 0) { Toast.makeText(this, "Proposal MCP tidak valid.", Toast.LENGTH_LONG).show(); return }
         if (proposals.length() > 1) {
@@ -1006,14 +1006,14 @@ class MainActivity : Activity() {
                             }
                         } catch (e: Exception) { "Tindakan gagal: ${e.message ?: "tidak tersedia"}" }
                         if (assistantMessage != null && callId.isNotBlank()) {
-                            val target = sessions.firstOrNull { it.optString("id") == currentSessionId }
+                            val target = sessions.firstOrNull { it.optString("id") == originatingSessionId }
                             if (target != null) {
                                 val msgs = target.optJSONArray("messages") ?: JSONArray()
                                 msgs.put(JSONObject(assistantMessage.toString()))
                                 msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result))
                                 target.put("messages", msgs); saveSessions()
                             }
-                            continueAfterMcp(currentSessionId, assistantMessage, callId, name, result)
+                            continueAfterMcp(originatingSessionId, assistantMessage, callId, name, result)
                         }
                     }.show()
                 return
@@ -1024,7 +1024,7 @@ class MainActivity : Activity() {
                 .setMessage("Tool: $name\nArgumen:\n${args.toString(2).take(2400)}\n\nTool eksternal dapat membaca atau mengubah data. Jalankan hanya jika kamu percaya server dan argumennya.")
                 .setNegativeButton("Batal", null)
                 .setPositiveButton("Setujui & jalankan") { _, _ ->
-                    executeMcpTool(name, args, callId, assistantMessage)
+                    executeMcpTool(name, args, callId, assistantMessage, originatingSessionId)
                 }
                 .show()
             return
@@ -1058,14 +1058,14 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
-    private fun executeMcpTool(toolName: String, arguments: JSONObject, toolCallId: String = "", assistantMessage: JSONObject? = null) {
+    private fun executeMcpTool(toolName: String, arguments: JSONObject, toolCallId: String = "", assistantMessage: JSONObject? = null, originatingSessionId: String = currentSessionId) {
         val endpoint = prefs.getString("mcp_url", "").orEmpty().trim()
         val parsed = try { URL(endpoint) } catch (_: Exception) { null }
         if (parsed == null || (parsed.protocol != "https" && parsed.protocol != "http")) {
             Toast.makeText(this, "Simpan endpoint MCP HTTP(S) yang valid terlebih dahulu.", Toast.LENGTH_LONG).show(); return
         }
         statusText("Menjalankan MCP tool…")
-        val executionSessionId = currentSessionId
+        val executionSessionId = originatingSessionId
         thread {
             val output = try {
                 var sessionId: String? = null
