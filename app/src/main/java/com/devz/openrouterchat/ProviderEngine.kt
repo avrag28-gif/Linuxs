@@ -75,6 +75,7 @@ object OpenAiCompatibleClient {
         apiKeySnapshot: String? = null,
         baseUrlSnapshot: String? = null,
         modelSnapshot: String? = null,
+        toolsSnapshot: JSONArray? = null,
         connectTimeoutMs: Int = 20000,
         readTimeoutMs: Int = 90000
     ): String {
@@ -101,7 +102,11 @@ object OpenAiCompatibleClient {
             }
         }
         try {
-            val body = JSONObject().put("model", model).put("messages", messages).toString()
+            val requestBody = JSONObject().put("model", model).put("messages", messages)
+            if (toolsSnapshot != null && toolsSnapshot.length() > 0) {
+                requestBody.put("tools", toolsSnapshot).put("tool_choice", "auto")
+            }
+            val body = requestBody.toString()
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = connection.responseCode
             val raw = (if (code in 200..299) connection.inputStream else connection.errorStream)
@@ -112,8 +117,24 @@ object OpenAiCompatibleClient {
                 } catch (_: Exception) { raw }
                 throw IllegalStateException("HTTP $code: ${detail.take(700)}")
             }
-            val content = JSONObject(raw).optJSONArray("choices")
-                ?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
+            val responseMessage = JSONObject(raw).optJSONArray("choices")
+                ?.optJSONObject(0)?.optJSONObject("message")
+                ?: throw IllegalStateException("Respons model tidak memiliki message.")
+            val toolCalls = responseMessage.optJSONArray("tool_calls")
+            if (toolCalls != null && toolCalls.length() > 0) {
+                // Tool calls are proposals only; the Activity must request approval.
+                val proposals = JSONArray()
+                for (i in 0 until toolCalls.length()) {
+                    val call = toolCalls.optJSONObject(i) ?: continue
+                    val fn = call.optJSONObject("function") ?: continue
+                    val args = try { JSONObject(fn.optString("arguments", "{}")) }
+                        catch (_: Exception) { JSONObject() }
+                    proposals.put(JSONObject().put("name", fn.optString("name"))
+                        .put("arguments", args))
+                }
+                return "[AGENTNOVA_MCP_PROPOSALS]$proposals"
+            }
+            val content = responseMessage.opt("content")
             return when (content) {
                 is String -> content.ifBlank { "Respons kosong dari model." }
                 is JSONArray -> (0 until content.length()).mapNotNull { i ->
