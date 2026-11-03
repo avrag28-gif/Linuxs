@@ -1164,8 +1164,21 @@ class MainActivity : Activity() {
                                             }
                                         } ?: throw IllegalStateException("File tidak dapat dibuka untuk pembacaan bertahap.")
                                         var safeLength = bytes.size
+                                        val bom = contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                                            java.io.FileInputStream(descriptor.fileDescriptor).use { head ->
+                                                val first = head.read()
+                                                val second = head.read()
+                                                val third = head.read()
+                                                when {
+                                                    first == 0xFF && second == 0xFE -> "UTF16LE"
+                                                    first == 0xFE && second == 0xFF -> "UTF16BE"
+                                                    first == 0xEF && second == 0xBB && third == 0xBF -> "UTF8BOM"
+                                                    else -> "UTF8"
+                                                }
+                                            }
+                                        } ?: "UTF8"
                                         val startsUtf16 = offset == 0L && bytes.size >= 2 && ((bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) || (bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()))
-                                        if (!startsUtf16 && bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
+                                        if ((bom == "UTF8" || bom == "UTF8BOM") && !startsUtf16 && bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
                                             var leadIndex = bytes.size - 1
                                             var continuationCount = 0
                                             while (leadIndex >= 0 && (bytes[leadIndex].toInt() and 0xC0) == 0x80 && continuationCount < 3) {
@@ -1184,19 +1197,6 @@ class MainActivity : Activity() {
                                                 if (expectedBytes > bytes.size - leadIndex) safeLength = leadIndex
                                             }
                                         }
-                                        val bom = contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                                            java.io.FileInputStream(descriptor.fileDescriptor).use { head ->
-                                                val first = head.read()
-                                                val second = head.read()
-                                                val third = head.read()
-                                                when {
-                                                    first == 0xFF && second == 0xFE -> "UTF16LE"
-                                                    first == 0xFE && second == 0xFF -> "UTF16BE"
-                                                    first == 0xEF && second == 0xBB && third == 0xBF -> "UTF8BOM"
-                                                    else -> "UTF8"
-                                                }
-                                            }
-                                        } ?: "UTF8"
                                         if ((bom == "UTF16LE" || bom == "UTF16BE") && safeLength % 2 != 0 && (fileSize < 0L || offset + safeLength < fileSize)) safeLength--
                                         val decoded = when (bom) {
                                             "UTF16LE" -> String(bytes, if (offset == 0L) 2 else 0, safeLength - if (offset == 0L) 2 else 0, Charsets.UTF_16LE)
