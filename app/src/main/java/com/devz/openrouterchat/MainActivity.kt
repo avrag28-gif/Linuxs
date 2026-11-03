@@ -993,6 +993,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Simpan endpoint MCP HTTP(S) yang valid terlebih dahulu.", Toast.LENGTH_LONG).show(); return
         }
         statusText("Menjalankan MCP tool…")
+        val executionSessionId = currentSessionId
         thread {
             val output = try {
                 var sessionId: String? = null
