@@ -1,7 +1,11 @@
 name: Build Android APK
 on:
   workflow_dispatch:
-  # Push builds are paused during implementation; run manually when the feature set is ready.
+  push:
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
 permissions:
   contents: read
 jobs:
