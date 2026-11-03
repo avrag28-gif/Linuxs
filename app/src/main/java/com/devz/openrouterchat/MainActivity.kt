@@ -357,6 +357,20 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Provider " + p.label + " tersimpan.", Toast.LENGTH_SHORT).show()
         }.apply { setPadding(dp(14), dp(12), dp(14), dp(12)) })
         body.addView(label("Mendukung provider cloud, server lokal, dan endpoint OpenAI-compatible kustom.", 11f, muted).apply { setPadding(0, dp(7), 0, dp(8)) })
+        body.addView(section("MODE MELAYANG"))
+        val pipAuto = android.widget.CheckBox(this).apply {
+            text = "Otomatis masuk PiP saat meninggalkan aplikasi"
+            setTextColor(primary)
+            textSize = 13f
+            buttonTintList = android.content.res.ColorStateList.valueOf(accent)
+            isChecked = prefs.getBoolean("pip_auto_enabled", false)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean("pip_auto_enabled", checked).apply()
+                Toast.makeText(this@MainActivity, if (checked) "PiP otomatis aktif." else "PiP otomatis dinonaktifkan.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        body.addView(pipAuto, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) })
+        body.addView(label("Mode PiP otomatis hanya aktif setelah kamu mengizinkannya di sini. PiP manual tetap tersedia.", 11f, muted))
         body.addView(section("MCP SERVER"))
         mcpField = EditText(this).apply {
             hint = "URL endpoint MCP (HTTP)"
@@ -871,6 +885,12 @@ class MainActivity : Activity() {
             }.show()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (prefs.getBoolean("pip_auto_enabled", false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isFinishing) {
+            enterFloatingMode()
+        }
+    }
     private fun enterFloatingMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
