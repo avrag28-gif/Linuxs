@@ -580,6 +580,14 @@ class MainActivity : Activity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode != RESULT_OK) return
+        if (requestCode == REQ_VOICE) {
+            val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank() && ::prompt.isInitialized) {
+                prompt.setText(spoken)
+                prompt.setSelection(prompt.text.length)
+            }
+            return
+        }
         val uri = data?.data ?: return
         if (requestCode == REQ_FOLDER) {
             try {
@@ -604,14 +612,6 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Folder dipilih.", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "Tidak bisa membaca folder: ${e.message}", Toast.LENGTH_LONG).show()
-            }
-            return
-        }
-        if (requestCode == REQ_VOICE) {
-            val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-            if (!spoken.isNullOrBlank() && ::prompt.isInitialized) {
-                prompt.setText(spoken)
-                prompt.setSelection(prompt.text.length)
             }
             return
         }
