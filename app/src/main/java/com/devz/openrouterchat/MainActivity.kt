@@ -19,88 +19,137 @@ import java.net.URL
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
-    private val model = "nvidia/nemotron-3.5-super-vl:free"
     private val prefs by lazy { getSharedPreferences("nova_settings", Context.MODE_PRIVATE) }
+    private val bg = Color.rgb(16, 18, 22)
+    private val panel = Color.rgb(29, 32, 38)
+    private val accent = Color.rgb(55, 116, 232)
+    private val primary = Color.rgb(245, 246, 248)
+    private val muted = Color.rgb(164, 170, 180)
+    private val models = listOf(
+        "nvidia/nemotron-3.5-super-vl:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "google/gemma-3-27b-it:free",
+        "qwen/qwen3-4b:free"
+    )
     private lateinit var root: FrameLayout
-    private lateinit var contentColumn: LinearLayout
     private lateinit var page: LinearLayout
     private lateinit var drawer: LinearLayout
     private lateinit var scrim: View
-    private lateinit var messages: LinearLayout
+    private lateinit var messagesView: LinearLayout
     private lateinit var prompt: EditText
-    private lateinit var keyField: EditText
     private lateinit var status: TextView
     private lateinit var sendButton: TextView
+    private lateinit var keyField: EditText
+    private lateinit var memoryField: EditText
+    private lateinit var modelSpinner: Spinner
     private var drawerOpen = false
     private var showKey = false
-    private var accent = Color.rgb(133, 115, 255)
+    private var sessions = mutableListOf<JSONObject>()
+    private var currentSessionId = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        accent = prefs.getInt("accent", Color.rgb(133, 115, 255))
-        window.statusBarColor = Color.rgb(10, 12, 25)
-        window.navigationBarColor = Color.rgb(10, 12, 25)
+        window.statusBarColor = bg
+        window.navigationBarColor = bg
         window.decorView.systemUiVisibility = 0
+        loadSessions()
+        if (sessions.isEmpty()) newSession(false)
         buildShell()
         showChat()
     }
 
-    private fun buildShell() {
-        root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(10, 12, 25)) }
-        contentColumn = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(13, 17, 39), Color.rgb(22, 18, 48), Color.rgb(9, 20, 34)))
+    private fun loadSessions() {
+        sessions.clear()
+        try {
+            val arr = JSONArray(prefs.getString("sessions_json", "[]"))
+            for (i in 0 until arr.length()) sessions.add(arr.getJSONObject(i))
+        } catch (_: Exception) { sessions.clear() }
+        currentSessionId = prefs.getString("current_session", "").orEmpty()
+        if (sessions.none { it.optString("id") == currentSessionId }) {
+            currentSessionId = sessions.firstOrNull()?.optString("id").orEmpty()
         }
+    }
+
+    private fun saveSessions() {
+        val arr = JSONArray()
+        sessions.forEach { arr.put(it) }
+        prefs.edit().putString("sessions_json", arr.toString())
+            .putString("current_session", currentSessionId).apply()
+    }
+
+    private fun newSession(refresh: Boolean = true) {
+        val s = JSONObject()
+            .put("id", System.currentTimeMillis().toString())
+            .put("title", "Chat baru")
+            .put("messages", JSONArray())
+        sessions.add(0, s)
+        currentSessionId = s.optString("id")
+        saveSessions()
+        if (refresh && ::page.isInitialized) {
+            showChat()
+            buildDrawer()
+            closeDrawer()
+        }
+    }
+
+    private fun currentSession(): JSONObject {
+        return sessions.firstOrNull { it.optString("id") == currentSessionId }
+            ?: sessions.first().also { currentSessionId = it.optString("id") }
+    }
+
+    private fun sessionMessages(): JSONArray = currentSession().optJSONArray("messages") ?: JSONArray()
+
+    private fun buildShell() {
+        root = FrameLayout(this).apply { setBackgroundColor(bg) }
+        val main = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(bg) }
         val top = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(12))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            setBackgroundColor(bg)
         }
-        val menu = label("☰", 25f, Color.WHITE).apply {
+        val menu = label("☰", 22f, primary, true).apply {
             gravity = Gravity.CENTER
-            background = glass(18)
-            setPadding(dp(13), dp(8), dp(13), dp(8))
-            setOnClickListener { toggleDrawer() }
+            background = solid(panel, 8)
         }
-        top.addView(menu, LinearLayout.LayoutParams(dp(48), dp(44)))
-        val brand = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
+        top.addView(menu, LinearLayout.LayoutParams(dp(44), dp(42)))
+        menu.setOnClickListener { toggleDrawer() }
+        val logo = label("N", 19f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER
+            background = solid(accent, 8)
         }
-        brand.addView(label("NOVA AI", 19f, Color.WHITE, true))
-        brand.addView(label("YOUR SPACE TO THINK", 9f, Color.rgb(164, 169, 204), true))
+        val logoLp = LinearLayout.LayoutParams(dp(34), dp(34)); logoLp.leftMargin = dp(12)
+        top.addView(logo, logoLp)
+        val brand = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(9), 0, 0, 0) }
+        brand.addView(label("NOVA AI", 17f, primary, true))
+        brand.addView(label("Chat", 11f, muted))
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        val online = label("●", 13f, Color.rgb(102, 255, 197)).apply {
-            background = glass(30)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+        val new = label("+", 26f, primary, true).apply {
+            gravity = Gravity.CENTER
+            background = solid(panel, 8)
+            setOnClickListener { newSession() }
         }
-        top.addView(online)
-        contentColumn.addView(top)
-        val divider = View(this).apply { setBackgroundColor(0x22FFFFFF) }
-        contentColumn.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
+        top.addView(new, LinearLayout.LayoutParams(dp(42), dp(42)))
+        main.addView(top)
+        main.addView(View(this).apply { setBackgroundColor(Color.rgb(42, 45, 52)) },
+            LinearLayout.LayoutParams(-1, dp(1)))
         page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(16), dp(18), dp(14))
+            setPadding(dp(16), dp(16), dp(16), dp(12))
         }
-        contentColumn.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(contentColumn, FrameLayout.LayoutParams(-1, -1))
-
+        main.addView(page, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(main, FrameLayout.LayoutParams(-1, -1))
         scrim = View(this).apply {
-            setBackgroundColor(0x99050A18.toInt())
+            setBackgroundColor(0x99000000.toInt())
             visibility = View.GONE
             setOnClickListener { closeDrawer() }
         }
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
         drawer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(38), dp(16), dp(20))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(Color.rgb(28, 30, 62), Color.rgb(14, 23, 43))).apply {
-                setCornerRadii(floatArrayOf(0f,0f,dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),dp(26).toFloat(),0f,0f))
-                setStroke(dp(1), 0x55FFFFFF)
-            }
-            elevation = dp(24).toFloat()
+            setPadding(dp(16), dp(20), dp(12), dp(16))
+            setBackgroundColor(panel)
+            elevation = dp(18).toFloat()
             visibility = View.GONE
         }
         root.addView(drawer, FrameLayout.LayoutParams(dp(292), -1, Gravity.START))
@@ -110,47 +159,51 @@ class MainActivity : Activity() {
 
     private fun buildDrawer() {
         drawer.removeAllViews()
-        drawer.addView(label("✦  NOVA", 27f, Color.WHITE, true))
-        drawer.addView(label("LIQUID GLASS AI", 10f, Color.rgb(163, 154, 255), true).apply {
-            setPadding(0, dp(4), 0, dp(32))
-        })
-        drawer.addView(label("WORKSPACE", 10f, Color.rgb(140, 149, 184), true).apply {
-            setPadding(dp(8), 0, 0, dp(10))
-        })
-        drawerItem("✧", "Chat baru", "Percakapan AI") { showChat(); closeDrawer() }
-        drawerItem("⚙", "Pengaturan", "API key & preferensi") { showSettings(); closeDrawer() }
-        drawerItem("◈", "Model AI", "Nemotron · Free") { showModelInfo(); closeDrawer() }
-        val spacer = View(this)
-        drawer.addView(spacer, LinearLayout.LayoutParams(1, 0, 1f))
-        val note = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = glass(20)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val logo = label("N", 18f, Color.WHITE, true).apply {
+            gravity = Gravity.CENTER; background = solid(accent, 7)
         }
-        note.addView(label("✦  NOVA AI", 15f, Color.WHITE, true))
-        note.addView(label("Made for ideas that matter.", 11f, Color.rgb(180, 186, 216)).apply {
-            setPadding(0, dp(5), 0, 0)
+        head.addView(logo, LinearLayout.LayoutParams(dp(36), dp(36)))
+        val name = label("NOVA AI", 18f, primary, true).apply { setPadding(dp(10), 0, 0, 0) }
+        head.addView(name)
+        drawer.addView(head)
+        drawer.addView(label("SIMPLE AI CHAT", 10f, muted, true).apply {
+            setPadding(0, dp(8), 0, dp(22))
         })
-        drawer.addView(note)
+        drawer.addView(drawerButton("+   Chat baru") { newSession() })
+        drawer.addView(drawerButton("Pengaturan") { showSettings(); closeDrawer() })
+        drawer.addView(label("RIWAYAT CHAT", 10f, muted, true).apply {
+            setPadding(dp(3), dp(24), 0, dp(10))
+        })
+        val scroll = ScrollView(this)
+        val history = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        sessions.forEach { s ->
+            val title = s.optString("title", "Chat baru").ifBlank { "Chat baru" }
+            val item = label(title, 13f, if (s.optString("id") == currentSessionId) Color.WHITE else muted)
+            item.maxLines = 2
+            item.setPadding(dp(10), dp(12), dp(8), dp(12))
+            item.background = solid(if (s.optString("id") == currentSessionId) Color.rgb(45, 51, 62) else panel, 6)
+            item.setOnClickListener {
+                currentSessionId = s.optString("id")
+                saveSessions()
+                showChat()
+                buildDrawer()
+                closeDrawer()
+            }
+            val lp = LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = dp(4)
+            history.addView(item, lp)
+        }
+        scroll.addView(history)
+        drawer.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun drawerItem(icon: String, title: String, subtitle: String, action: () -> Unit) {
-        val item = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+    private fun drawerButton(text: String, action: () -> Unit) =
+        label(text, 14f, primary, true).apply {
             gravity = Gravity.CENTER_VERTICAL
-            background = glass(18)
-            setPadding(dp(13), dp(13), dp(10), dp(13))
+            setPadding(dp(12), dp(13), dp(12), dp(13))
+            background = solid(bg, 7)
             setOnClickListener { action() }
         }
-        item.addView(label(icon, 23f, Color.rgb(178, 164, 255), true), LinearLayout.LayoutParams(dp(38), -2))
-        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        texts.addView(label(title, 15f, Color.WHITE, true))
-        texts.addView(label(subtitle, 10f, Color.rgb(163, 171, 202)).apply { setPadding(0, dp(3), 0, 0) })
-        item.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        val lp = LinearLayout.LayoutParams(-1, -2)
-        lp.bottomMargin = dp(10)
-        drawer.addView(item, lp)
-    }
 
     private fun toggleDrawer() { if (drawerOpen) closeDrawer() else openDrawer() }
     private fun openDrawer() {
@@ -158,209 +211,184 @@ class MainActivity : Activity() {
         drawerOpen = true
         scrim.visibility = View.VISIBLE
         drawer.visibility = View.VISIBLE
-        val anim = TranslateAnimation(-dp(300).toFloat(), 0f, 0f, 0f).apply {
-            duration = 230; interpolator = DecelerateInterpolator()
-        }
-        drawer.startAnimation(anim)
+        drawer.startAnimation(TranslateAnimation(-dp(300).toFloat(), 0f, 0f, 0f).apply {
+            duration = 180; interpolator = DecelerateInterpolator()
+        })
     }
     private fun closeDrawer() {
-        if (!drawerOpen) return
         drawerOpen = false
-        val anim = TranslateAnimation(0f, -dp(300).toFloat(), 0f, 0f).apply {
-            duration = 180; interpolator = DecelerateInterpolator()
-        }
-        drawer.startAnimation(anim)
         drawer.visibility = View.GONE
         scrim.visibility = View.GONE
     }
 
     private fun showChat() {
         page.removeAllViews()
-        val heading = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        heading.addView(label("Halo, explorer. ✨", 25f, Color.WHITE, true))
-        heading.addView(label("Apa yang ingin kamu ciptakan hari ini?", 13f, Color.rgb(174, 181, 213)).apply {
-            setPadding(0, dp(7), 0, dp(16))
-        })
-        page.addView(heading)
-        val hero = LinearLayout(this).apply {
+        val history = ScrollView(this).apply { clipToPadding = false }
+        messagesView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(0x443C4BAA, 0x332C8BCA, 0x222D205F)).apply {
-                cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), 0x55DAD6FF)
-            }
-            setPadding(dp(17), dp(16), dp(17), dp(16))
+            setPadding(0, 0, 0, dp(10))
         }
-        hero.addView(label("◈  NOVA INTELLIGENCE", 10f, Color.rgb(177, 166, 255), true))
-        hero.addView(label("Ide besar dimulai dari satu pesan.", 18f, Color.WHITE, true).apply {
-            setPadding(0, dp(8), 0, dp(5))
-        })
-        hero.addView(label("Powered by Nemotron · Free model", 11f, Color.rgb(183, 195, 223)))
-        val heroLp = LinearLayout.LayoutParams(-1, -2)
-        heroLp.bottomMargin = dp(16)
-        page.addView(hero, heroLp)
-
-        val historyScroll = ScrollView(this).apply { clipToPadding = false }
-        messages = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        messages.addView(messageCard("NOVA", "Aku NOVA, partner AI kamu. Tanya apa saja, brainstorm ide, atau mulai proyek baru. 🌌", false))
-        historyScroll.addView(messages)
-        page.addView(historyScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
+        val msgs = sessionMessages()
+        if (msgs.length() == 0) {
+            messagesView.addView(label("Apa yang bisa kubantu?", 25f, primary, true).apply {
+                setPadding(0, dp(28), 0, dp(8))
+            })
+            messagesView.addView(label("Tulis pertanyaan atau ide kamu.", 14f, muted).apply {
+                setPadding(0, 0, 0, dp(20))
+            })
+        } else {
+            for (i in 0 until msgs.length()) {
+                val m = msgs.optJSONObject(i) ?: continue
+                addMessageView(if (m.optString("role") == "user") "Kamu" else "NOVA",
+                    m.optString("content"), m.optString("role") == "user")
+            }
+        }
+        history.addView(messagesView)
+        page.addView(history, LinearLayout.LayoutParams(-1, 0, 1f))
         val composer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = glass(24)
-            setPadding(dp(12), dp(8), dp(12), dp(10))
+            background = solid(panel, 9)
+            setPadding(dp(12), dp(8), dp(10), dp(8))
         }
         prompt = EditText(this).apply {
-            hint = "Tulis sesuatu untuk NOVA..."
-            setTextColor(Color.WHITE); setHintTextColor(Color.rgb(132, 143, 177))
-            textSize = 14f; minLines = 1; maxLines = 4
+            hint = "Tulis pesan..."
+            setTextColor(primary); setHintTextColor(muted)
+            textSize = 15f; minLines = 1; maxLines = 4
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-            setPadding(dp(6), dp(5), dp(6), dp(7))
+            setPadding(dp(4), dp(4), dp(4), dp(8))
             background = null
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
-        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        status = label("●  Siap membantu", 10f, Color.rgb(151, 163, 199))
-        bottom.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-        sendButton = label("➤  Kirim", 13f, Color.WHITE, true).apply {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        status = label(if (prefs.getString("api_key", "").isNullOrBlank()) "Tambahkan API key di Pengaturan" else "", 11f, muted)
+        row.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
+        sendButton = label("Kirim  ↑", 13f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(accent, Color.rgb(72, 145, 255))).apply { cornerRadius = dp(15).toFloat() }
-            setPadding(dp(17), dp(11), dp(17), dp(11))
+            background = solid(accent, 7)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             setOnClickListener { submit() }
         }
-        bottom.addView(sendButton)
-        composer.addView(bottom)
-        val composerLp = LinearLayout.LayoutParams(-1, -2)
-        composerLp.topMargin = dp(12)
-        page.addView(composer, composerLp)
-        if (prefs.getString("api_key", "").isNullOrBlank()) {
-            status.text = "●  Tambahkan API key di Pengaturan"
-            status.setTextColor(Color.rgb(255, 202, 120))
-        }
+        row.addView(sendButton)
+        composer.addView(row)
+        val lp = LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(10)
+        page.addView(composer, lp)
     }
 
     private fun showSettings() {
         page.removeAllViews()
-        page.addView(label("Pengaturan", 27f, Color.WHITE, true))
-        page.addView(label("Atur NOVA sesuai gaya kamu.", 13f, Color.rgb(174, 181, 213)).apply {
-            setPadding(0, dp(6), 0, dp(20))
+        page.addView(label("Pengaturan", 25f, primary, true))
+        page.addView(label("Koneksi, model, dan memori", 13f, muted).apply {
+            setPadding(0, dp(5), 0, dp(18))
         })
         val scroll = ScrollView(this)
-        val settings = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        settings.addView(sectionTitle("KONEKSI AI"))
-        val keyCard = cardColumn()
-        keyCard.addView(label("OpenRouter API Key", 14f, Color.WHITE, true))
-        keyCard.addView(label("Key disimpan lokal di perangkat ini.", 11f, Color.rgb(163, 171, 202)).apply {
-            setPadding(0, dp(5), 0, dp(10))
-        })
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        body.addView(section("OPENROUTER API KEY"))
         keyField = EditText(this).apply {
-            hint = "sk-or-v1-..."
+            hint = "Tempel API key di sini"
             setText(prefs.getString("api_key", ""))
-            setTextColor(Color.WHITE); setHintTextColor(Color.rgb(132, 143, 177))
+            setTextColor(primary); setHintTextColor(muted); textSize = 13f; isSingleLine = true
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            textSize = 13f; isSingleLine = true
-            setPadding(dp(12), dp(11), dp(12), dp(11))
-            background = glass(13)
+            setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7)
         }
-        keyCard.addView(keyField, LinearLayout.LayoutParams(-1, -2))
-        val keyActions = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(10), 0, 0)
-        }
-        val show = label("Lihat / Sembunyikan", 11f, Color.rgb(195, 190, 255), true).apply {
-            setPadding(dp(3), dp(9), dp(12), dp(9))
-            setOnClickListener {
-                showKey = !showKey
-                keyField.inputType = InputType.TYPE_CLASS_TEXT or if (showKey) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
-                keyField.setSelection(keyField.text.length)
-            }
-        }
-        keyActions.addView(show, LinearLayout.LayoutParams(0, -2, 1f))
-        keyActions.addView(actionButton("Simpan key") {
+        body.addView(keyField, fieldLp())
+        val keyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        keyRow.addView(smallButton("Lihat / sembunyikan") {
+            showKey = !showKey
+            keyField.inputType = InputType.TYPE_CLASS_TEXT or if (showKey) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
+            keyField.setSelection(keyField.text.length)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        keyRow.addView(smallButton("Simpan key") {
             prefs.edit().putString("api_key", keyField.text.toString().trim()).apply()
-            Toast.makeText(this, "API key tersimpan di perangkat.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "API key tersimpan.", Toast.LENGTH_SHORT).show()
         })
-        keyCard.addView(keyActions)
-        settings.addView(keyCard, sectionLp())
-
-        settings.addView(sectionTitle("MODEL"))
-        val modelCard = cardColumn()
-        modelCard.addView(label("Nemotron 3.5 Super VL", 16f, Color.WHITE, true))
-        modelCard.addView(label(model, 10f, Color.rgb(174, 181, 213)).apply { setPadding(0, dp(6), 0, dp(9)) })
-        modelCard.addView(label("Provider: OpenRouter  ·  Tier: Free", 11f, Color.rgb(102, 255, 197)))
-        settings.addView(modelCard, sectionLp())
-
-        settings.addView(sectionTitle("TAMPILAN"))
-        val lookCard = cardColumn()
-        lookCard.addView(label("Liquid Glass", 15f, Color.WHITE, true))
-        lookCard.addView(label("Dark space • glass panels • violet neon", 11f, Color.rgb(174, 181, 213)).apply {
-            setPadding(0, dp(5), 0, dp(12))
-        })
-        val accentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        accentRow.addView(label("Aksen neon", 12f, Color.rgb(195, 201, 228)), LinearLayout.LayoutParams(0, -2, 1f))
-        val colors = listOf(Color.rgb(133,115,255), Color.rgb(65,210,255), Color.rgb(255,100,190), Color.rgb(102,255,197))
-        colors.forEach { c ->
-            val dot = View(this).apply {
-                background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(c); setStroke(dp(2), if (accent == c) Color.WHITE else 0x55FFFFFF) }
-                setOnClickListener { accent = c; prefs.edit().putInt("accent", c).apply(); showSettings() }
+        body.addView(keyRow)
+        body.addView(section("MODEL AI"))
+        val spinner = Spinner(this)
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models.map { it.substringBefore(":free") + if (it.endsWith(":free")) " · Free" else "" })
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinner.adapter = adapter
+        val selected = models.indexOf(prefs.getString("model", models[0])).let { if (it < 0) 0 else it }
+        spinner.setSelection(selected)
+        spinner.setPadding(dp(8), dp(5), dp(8), dp(5))
+        spinner.background = solid(panel, 7)
+        spinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                prefs.edit().putString("model", models[position]).apply()
             }
-            val lp = LinearLayout.LayoutParams(dp(27), dp(27)); lp.leftMargin = dp(8)
-            accentRow.addView(dot, lp)
         }
-        lookCard.addView(accentRow)
-        settings.addView(lookCard, sectionLp())
-
-        settings.addView(sectionTitle("DATA & PRIVASI"))
-        val privacy = cardColumn()
-        privacy.addView(label("API key hanya disimpan pada preferensi lokal aplikasi; jangan bagikan key ke orang lain.", 12f, Color.rgb(174, 181, 213)))
-        val clear = actionButton("Hapus API key") {
-            prefs.edit().remove("api_key").apply()
-            keyField.setText("")
-            Toast.makeText(this, "API key dihapus.", Toast.LENGTH_SHORT).show()
-        }
-        val clearLp = LinearLayout.LayoutParams(-2, -2); clearLp.topMargin = dp(12)
-        privacy.addView(clear, clearLp)
-        settings.addView(privacy, sectionLp())
-        settings.addView(label("NOVA AI  •  Liquid Glass Edition", 10f, Color.rgb(117, 129, 166)).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, dp(16))
+        body.addView(spinner, fieldLp())
+        body.addView(label("Model yang dipilih dipakai untuk chat baru dan berikutnya.", 11f, muted).apply {
+            setPadding(0, dp(5), 0, dp(8))
         })
-        scroll.addView(settings)
+        body.addView(section("MEMORI NOVA"))
+        body.addView(label("Simpan hal penting agar bisa dipakai di percakapan berikutnya.", 12f, muted).apply {
+            setPadding(0, 0, 0, dp(8))
+        })
+        memoryField = EditText(this).apply {
+            hint = "Contoh: saya suka jawaban singkat..."
+            setText(prefs.getString("memory", ""))
+            setTextColor(primary); setHintTextColor(muted); textSize = 13f
+            minLines = 3; maxLines = 7
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            gravity = Gravity.TOP
+            setPadding(dp(12), dp(12), dp(12), dp(12)); background = solid(panel, 7)
+        }
+        body.addView(memoryField, fieldLp())
+        body.addView(smallButton("Simpan memori") {
+            prefs.edit().putString("memory", memoryField.text.toString().trim()).apply()
+            Toast.makeText(this, "Memori disimpan di perangkat.", Toast.LENGTH_SHORT).show()
+        }.apply { setPadding(dp(14), dp(12), dp(14), dp(12)) })
+        body.addView(smallButton("Hapus semua riwayat chat") {
+            sessions.clear()
+            newSession(false)
+            saveSessions()
+            buildDrawer()
+            showChat()
+            Toast.makeText(this, "Riwayat chat dihapus.", Toast.LENGTH_SHORT).show()
+        }.apply { setPadding(dp(14), dp(12), dp(14), dp(12)) })
+        body.addView(label("API key, memori, dan riwayat tersimpan lokal di perangkat.", 11f, muted).apply {
+            setPadding(0, dp(18), 0, dp(20))
+        })
+        scroll.addView(body)
         page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
     }
 
-    private fun showModelInfo() {
-        page.removeAllViews()
-        page.addView(label("Model AI", 27f, Color.WHITE, true))
-        page.addView(label("Model yang digunakan NOVA.", 13f, Color.rgb(174,181,213)).apply { setPadding(0, dp(8), 0, dp(20)) })
-        val c = cardColumn()
-        c.addView(label("◈  Nemotron 3.5 Super VL", 18f, Color.WHITE, true))
-        c.addView(label(model, 11f, Color.rgb(195,190,255)).apply { setPadding(0, dp(9), 0, dp(12)) })
-        c.addView(label("Model ini dipanggil melalui OpenRouter. Ketersediaan model gratis, kuota, dan respons dapat berubah mengikuti kebijakan provider.", 13f, Color.rgb(174,181,213)))
-        page.addView(c)
-        page.addView(actionButton("Kembali ke chat") { showChat() }.apply { setPadding(dp(18), dp(13), dp(18), dp(13)) },
-            LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
+    private fun section(text: String) = label(text, 10f, muted, true).apply {
+        setPadding(dp(2), dp(18), 0, dp(8))
     }
+    private fun fieldLp() = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
+    private fun smallButton(text: String, action: () -> Unit) =
+        label(text, 12f, primary, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(10), dp(10), dp(10))
+            background = solid(if (text.contains("Simpan")) accent else panel, 7)
+            setOnClickListener { action() }
+        }
 
     private fun submit() {
         val key = prefs.getString("api_key", "").orEmpty().trim()
         val message = prompt.text.toString().trim()
         if (key.isEmpty()) {
-            Toast.makeText(this, "Tambahkan API key lewat ☰ → Pengaturan.", Toast.LENGTH_LONG).show()
-            showSettings()
-            return
+            Toast.makeText(this, "Masukkan API key di Pengaturan.", Toast.LENGTH_SHORT).show()
+            showSettings(); return
         }
-        if (message.isEmpty()) { prompt.error = "Tulis pesan terlebih dahulu"; return }
-        addMessage("KAMU", message, true)
+        if (message.isEmpty()) { prompt.error = "Tulis pesan"; return }
+        val session = currentSession()
+        val arr = sessionMessages()
+        arr.put(JSONObject().put("role", "user").put("content", message))
+        session.put("messages", arr)
+        if (arr.length() == 1) session.put("title", message.take(34))
+        saveSessions()
+        addMessageView("Kamu", message, true)
         prompt.setText("")
         sendButton.isEnabled = false
-        sendButton.alpha = 0.55f
-        status.text = "◌  NOVA sedang berpikir..."
-        val loading = messageCard("NOVA", "Sedang menyusun jawaban…", false)
-        messages.addView(loading)
+        status.text = "Menunggu jawaban..."
+        buildDrawer()
+        val loading = messageCard("NOVA", "Sedang menjawab...", false)
+        messagesView.addView(loading)
+        val model = prefs.getString("model", models[0]) ?: models[0]
+        val memory = prefs.getString("memory", "").orEmpty().trim()
         thread {
             var connection: HttpURLConnection? = null
             val answer = try {
@@ -371,8 +399,12 @@ class MainActivity : Activity() {
                     setRequestProperty("HTTP-Referer", "https://github.com/avrag28-gif/Linuxs")
                     setRequestProperty("X-Title", "NOVA AI")
                 }
-                val body = JSONObject().put("model", model).put("messages",
-                    JSONArray().put(JSONObject().put("role", "user").put("content", message)))
+                val requestMessages = JSONArray()
+                if (memory.isNotBlank()) requestMessages.put(JSONObject().put("role", "system")
+                    .put("content", "Informasi memori pengguna yang boleh digunakan untuk personalisasi: $memory"))
+                val history = sessionMessages()
+                for (i in 0 until history.length()) requestMessages.put(history.getJSONObject(i))
+                val body = JSONObject().put("model", model).put("messages", requestMessages)
                 connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -381,71 +413,54 @@ class MainActivity : Activity() {
                     val detail = try { JSONObject(raw).optJSONObject("error")?.optString("message") ?: raw } catch (_: Exception) { raw }
                     "Permintaan gagal (HTTP $code).\n$detail"
                 } else {
-                    val content = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)
-                        ?.optJSONObject("message")?.opt("content")
+                    val content = JSONObject(raw).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.opt("content")
                     when (content) {
                         is String -> content.ifBlank { "Respons kosong dari model." }
                         is JSONArray -> (0 until content.length()).mapNotNull { i ->
-                            val part = content.optJSONObject(i)
-                            part?.optString("text")?.takeIf { it.isNotBlank() }
-                        }.joinToString("\n").ifBlank { "Model mengirim format respons yang belum didukung." }
+                            content.optJSONObject(i)?.optString("text")?.takeIf { it.isNotBlank() }
+                        }.joinToString("\n").ifBlank { "Format respons belum didukung." }
                         else -> "Respons kosong dari model."
                     }
                 }
             } catch (e: Exception) {
-                "Koneksi gagal: ${e.message ?: "periksa internet dan API key kamu."}"
+                "Koneksi gagal: ${e.message ?: "periksa internet dan API key."}"
             } finally { connection?.disconnect() }
             runOnUiThread {
-                messages.removeView(loading)
-                addMessage("NOVA", answer, false)
+                messagesView.removeView(loading)
+                val latest = currentSession()
+                val latestArr = sessionMessages()
+                latestArr.put(JSONObject().put("role", "assistant").put("content", answer))
+                latest.put("messages", latestArr)
+                saveSessions()
+                addMessageView("NOVA", answer, false)
                 sendButton.isEnabled = true
-                sendButton.alpha = 1f
-                status.text = "●  Selesai"
+                status.text = ""
+                buildDrawer()
             }
         }
     }
 
-    private fun addMessage(who: String, text: String, mine: Boolean) {
-        messages.addView(messageCard(who, text, mine))
+    private fun addMessageView(who: String, text: String, mine: Boolean) {
+        messagesView.addView(messageCard(who, text, mine))
     }
 
     private fun messageCard(who: String, text: String, mine: Boolean): LinearLayout {
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = if (mine) GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(0x553F51A6, 0x443E3687)).apply { cornerRadius = dp(19).toFloat(); setStroke(dp(1), 0x44A7A0FF) } else glass(19)
-            setPadding(dp(14), dp(12), dp(14), dp(13))
+            background = solid(if (mine) Color.rgb(37, 54, 83) else panel, 8)
+            setPadding(dp(13), dp(11), dp(13), dp(12))
         }
-        box.addView(label(if (mine) "◉  $who" else "✦  $who", 10f,
-            if (mine) Color.rgb(190,181,255) else Color.rgb(103,238,205), true))
-        box.addView(label(text, 14f, Color.rgb(239,242,255)).apply {
-            setPadding(0, dp(7), 0, 0)
+        box.addView(label(who, 10f, if (mine) Color.rgb(173, 202, 255) else Color.rgb(190, 195, 204), true))
+        box.addView(label(text, 14f, primary).apply {
+            setPadding(0, dp(6), 0, 0)
             setTextIsSelectable(true)
         })
         val lp = LinearLayout.LayoutParams(-1, -2)
-        lp.bottomMargin = dp(10)
+        lp.bottomMargin = dp(9)
         if (mine) lp.leftMargin = dp(22) else lp.rightMargin = dp(22)
         box.layoutParams = lp
         return box
     }
-
-    private fun sectionTitle(s: String) = label(s, 10f, Color.rgb(150, 158, 194), true).apply {
-        setPadding(dp(4), dp(8), 0, dp(10))
-    }
-    private fun sectionLp() = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) }
-    private fun cardColumn() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = glass(20)
-        setPadding(dp(15), dp(15), dp(15), dp(15))
-    }
-    private fun actionButton(text: String, action: () -> Unit): TextView =
-        label(text, 12f, Color.WHITE, true).apply {
-            gravity = Gravity.CENTER
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(accent, Color.rgb(61, 131, 237))).apply { cornerRadius = dp(13).toFloat() }
-            setPadding(dp(13), dp(10), dp(13), dp(10))
-            setOnClickListener { action() }
-        }
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean = false): TextView =
         TextView(this).apply {
@@ -453,11 +468,10 @@ class MainActivity : Activity() {
             if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         }
 
-    private fun glass(radius: Int) = GradientDrawable().apply {
+    private fun solid(color: Int, radius: Int) = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(radius).toFloat()
-        setColor(0x1FFFFFFF)
-        setStroke(dp(1), 0x35FFFFFF)
+        setColor(color)
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
