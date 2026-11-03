@@ -526,7 +526,7 @@ class MainActivity : Activity() {
                 for (i in firstContextMessage until historySnapshot.length()) {
                     val item = JSONObject(historySnapshot.getJSONObject(i).toString())
                     val content = item.optString("content")
-                    if (content.length > 20000) item.put("content", content.take(20000) + "\\n[Konten dipotong untuk batas konteks.]")
+                    if (content.length > 20000) item.put("content", content.take(100000) + "\\n[Konten dipotong untuk batas konteks.])
                     requestMessages.put(item)
                 }
                 // Format image payload for the selected provider vision API.
@@ -569,7 +569,7 @@ class MainActivity : Activity() {
                                     .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_selected_file")
-                        .put("description", "Read a user-selected text file or list a user-selected folder after explicit approval.")
+                        .put("description", "Read a user-selected text, source-code, Markdown, CSV, JSON, XML, HTML, YAML, or configuration file up to 512 KB, preserving line breaks, or list a user-selected folder after explicit approval.")
                         .put("input_schema", JSONObject().put("type", "object")
                             .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                 .put("enum", JSONArray().put("read").put("list")))
@@ -753,7 +753,7 @@ class MainActivity : Activity() {
                     arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE),
                     null, null, null)?.use { cursor ->
                     val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                    while (cursor.moveToNext() && names.size < 100) {
+                    while (cursor.moveToNext() && names.size < 500) {
                         if (nameIndex >= 0) names.add(cursor.getString(nameIndex))
                     }
                 }
@@ -1085,7 +1085,7 @@ class MainActivity : Activity() {
                                         if (role == "user") {
                                             msgs.put(JSONObject().put("role", "user").put("content",
                                                 JSONArray().put(JSONObject().put("type", "tool_result")
-                                                    .put("tool_use_id", callId).put("content", result.take(12000)))))
+                                                    .put("tool_use_id", callId).put("content", result.take(100000)))))
                                         } else {
                                             msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.take(12000)))
                                         }
@@ -1110,7 +1110,7 @@ class MainActivity : Activity() {
                 if (selectedUri.isBlank() || (action == "read" && selectedKind != "file") || (action == "list" && selectedKind != "folder")) {
                     Toast.makeText(this, "Pilih sumber yang sesuai melalui Tambah sumber terlebih dahulu.", Toast.LENGTH_LONG).show(); return
                 }
-                val description = if (action == "read") "Membaca maksimal 64 KB dari file '$selectedName'." else "Menampilkan maksimal 100 nama item folder '$selectedName'."
+                val description = if (action == "read") "Membaca isi teks asli file dengan batas 512 KB. '$selectedName'." else "Menampilkan maksimal 500 nama item folder '$selectedName'."
                 android.app.AlertDialog.Builder(this).setTitle("AI meminta akses file")
                     .setMessage("$description\n\nHanya sumber yang kamu pilih melalui pemilih dokumen Android yang dapat diakses.")
                     .setNegativeButton("Batal", null)
@@ -1121,7 +1121,10 @@ class MainActivity : Activity() {
                                 val uri = Uri.parse(selectedUri)
                                 if (action == "read") {
                                     val mime = contentResolver.getType(uri).orEmpty()
-                                    if (!(mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") || mime.contains("csv") || selectedName.endsWith(".md", true) || selectedName.endsWith(".kt", true) || selectedName.endsWith(".py", true) || selectedName.endsWith(".log", true))) {
+                                    val lowerName = selectedName.lowercase(java.util.Locale.ROOT)
+                                    val textExtensions = listOf(".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".xml", ".html", ".htm", ".css", ".js", ".ts", ".jsx", ".tsx", ".kt", ".kts", ".java", ".py", ".ipynb", ".c", ".h", ".cpp", ".hpp", ".rs", ".go", ".swift", ".sh", ".bat", ".ps1", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf", ".properties", ".gradle", ".sql", ".log", ".diff", ".patch", ".rst", ".tex")
+                                    val looksText = mime.startsWith("text/") || mime.contains("json") || mime.contains("xml") || mime.contains("csv") || textExtensions.any { lowerName.endsWith(it) }
+                                    if (!looksText) {
                                         "File bukan tipe teks yang didukung. MIME: " + mime.ifBlank { "tidak diketahui" }
                                     } else {
                                         val bytes = contentResolver.openInputStream(uri)?.use { input ->
@@ -1132,7 +1135,7 @@ class MainActivity : Activity() {
                                                 val n = input.read(buffer)
                                                 if (n < 0) break
                                                 total += n
-                                                if (total > 65536) throw IllegalArgumentException("File melebihi batas 64 KB.")
+                                                if (total > 524288) throw IllegalArgumentException("File melebihi batas baca 512 KB. Pilih file yang lebih kecil atau pecah menjadi beberapa bagian.")
                                                 out.write(buffer, 0, n)
                                             }
                                             out.toByteArray()
