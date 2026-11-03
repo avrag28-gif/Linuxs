@@ -1199,6 +1199,22 @@ class MainActivity : Activity() {
                                             }
                                         }
                                         if ((bom == "UTF16LE" || bom == "UTF16BE") && safeLength % 2 != 0 && (fileSize < 0L || offset + safeLength < fileSize)) safeLength--
+                                        // Keep UTF-16 surrogate pairs together across chunk boundaries.
+                                        // If the last complete code unit is a high surrogate and more
+                                        // bytes remain, leave it for the next read instead of decoding
+                                        // it as an isolated replacement character.
+                                        if ((bom == "UTF16LE" || bom == "UTF16BE") &&
+                                            safeLength >= 2 && bytes.size == chunkSize &&
+                                            (fileSize < 0L || offset + bytes.size < fileSize)) {
+                                            val lastUnit = if (bom == "UTF16LE") {
+                                                (bytes[safeLength - 2].toInt() and 0xFF) or
+                                                    ((bytes[safeLength - 1].toInt() and 0xFF) shl 8)
+                                            } else {
+                                                ((bytes[safeLength - 2].toInt() and 0xFF) shl 8) or
+                                                    (bytes[safeLength - 1].toInt() and 0xFF)
+                                            }
+                                            if (lastUnit in 0xD800..0xDBFF) safeLength -= 2
+                                        }
                                         val decoded = when (bom) {
                                             "UTF16LE" -> String(bytes, if (offset == 0L) 2 else 0, safeLength - if (offset == 0L) 2 else 0, Charsets.UTF_16LE)
                                             "UTF16BE" -> String(bytes, if (offset == 0L) 2 else 0, safeLength - if (offset == 0L) 2 else 0, Charsets.UTF_16BE)
