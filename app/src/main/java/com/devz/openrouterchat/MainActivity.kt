@@ -440,13 +440,22 @@ class MainActivity : Activity() {
                 for (i in 0 until historySnapshot.length()) {
                     requestMessages.put(JSONObject(historySnapshot.getJSONObject(i).toString()))
                 }
-                OpenAiCompatibleClient.chat(
-                    this, requestMessages,
-                    providerSnapshot = provider,
-                    apiKeySnapshot = key,
-                    baseUrlSnapshot = baseUrl,
-                    modelSnapshot = model
-                )
+                if (provider.id == "anthropic") {
+                    AnthropicClient.chat(
+                        messages = requestMessages,
+                        apiKey = key,
+                        baseUrl = baseUrl,
+                        model = model
+                    )
+                } else {
+                    OpenAiCompatibleClient.chat(
+                        this, requestMessages,
+                        providerSnapshot = provider,
+                        apiKeySnapshot = key,
+                        baseUrlSnapshot = baseUrl,
+                        modelSnapshot = model
+                    )
+                }
             } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
             runOnUiThread {
                 requestMessagesView.removeView(loading)
