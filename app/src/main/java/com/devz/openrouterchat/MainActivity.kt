@@ -60,6 +60,7 @@ class MainActivity : Activity() {
     private var showKey = false
     private var sessions = mutableListOf<JSONObject>()
     private var currentSessionId = ""
+    private val REQ_VOICE = 103
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -288,6 +289,13 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(10), dp(16), dp(10))
             setOnClickListener { submit() }
         }
+        val voiceButton = label("🎙", 19f, primary, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = solid(bg, 7)
+            setOnClickListener { startVoiceInput() }
+        }
+        row.addView(voiceButton)
         row.addView(sendButton)
         composer.addView(row)
         val lp = LinearLayout.LayoutParams(-1, -2); lp.topMargin = dp(10)
@@ -587,6 +595,14 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Folder dipilih.", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "Tidak bisa membaca folder: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == REQ_VOICE) {
+            val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank() && ::prompt.isInitialized) {
+                prompt.setText(spoken)
+                prompt.setSelection(prompt.text.length)
             }
             return
         }
@@ -918,6 +934,17 @@ class MainActivity : Activity() {
                     .setMessage(output.take(10000)).setPositiveButton("Tutup", null).show()
             }
         }
+    }
+
+    private fun startVoiceInput() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, java.util.Locale.getDefault())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Bicara dengan AgentNova")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        try { startActivityForResult(intent, REQ_VOICE) }
+        catch (_: Exception) { Toast.makeText(this, "Layanan pengenalan suara tidak tersedia.", Toast.LENGTH_LONG).show() }
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
