@@ -20,11 +20,11 @@ import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
     private val prefs by lazy { getSharedPreferences("nova_settings", Context.MODE_PRIVATE) }
-    private val bg = Color.rgb(16, 18, 22)
-    private val panel = Color.rgb(29, 32, 38)
-    private val accent = Color.rgb(55, 116, 232)
+    private val bg = Color.rgb(12, 14, 18)
+    private val panel = Color.rgb(25, 29, 36)
+    private val accent = Color.rgb(63, 125, 245)
     private val primary = Color.rgb(245, 246, 248)
-    private val muted = Color.rgb(164, 170, 180)
+    private val muted = Color.rgb(163, 171, 184)
     private val models = listOf(
         "nvidia/nemotron-3.5-super-vl:free",
         "meta-llama/llama-3.3-70b-instruct:free",
@@ -131,7 +131,7 @@ class MainActivity : Activity() {
         }
         top.addView(new, LinearLayout.LayoutParams(dp(42), dp(42)))
         main.addView(top)
-        main.addView(View(this).apply { setBackgroundColor(Color.rgb(42, 45, 52)) },
+        main.addView(View(this).apply { setBackgroundColor(Color.rgb(53, 59, 69)) },
             LinearLayout.LayoutParams(-1, dp(1)))
         page = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -148,7 +148,7 @@ class MainActivity : Activity() {
         drawer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(20), dp(12), dp(16))
-            setBackgroundColor(panel)
+            background = solid(panel, 0)
             elevation = dp(18).toFloat()
             visibility = View.GONE
         }
@@ -473,6 +473,8 @@ class MainActivity : Activity() {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(radius).toFloat()
         setColor(color)
+        // Subtle glass-like edge: solid palette, no gradient.
+        setStroke(dp(1), Color.argb(38, 235, 241, 255))
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
