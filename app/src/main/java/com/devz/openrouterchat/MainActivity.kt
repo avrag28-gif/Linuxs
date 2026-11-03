@@ -307,7 +307,8 @@ class MainActivity : Activity() {
         val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, models.map { it.substringBefore(":free") + if (it.endsWith(":free")) " · Free" else "" })
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         spinner.adapter = adapter
-        val selected = models.indexOf(prefs.getString("model", models[0])).let { if (it < 0) 0 else it }
+        val savedModel = prefs.getString("model", models[0]) ?: models[0]
+        val selected = models.indexOf(savedModel).let { if (it < 0) 0 else it }
         spinner.setSelection(selected)
         spinner.setPadding(dp(8), dp(5), dp(8), dp(5))
         spinner.background = solid(panel, 7)
