@@ -703,6 +703,7 @@ class MainActivity : Activity() {
         thread {
             val result = try {
                 var sessionId: String? = null
+                var negotiatedProtocol: String? = null
                 var requestId = 1
 
                 fun rpc(method: String, params: JSONObject, notification: Boolean = false): JSONObject? {
@@ -714,6 +715,7 @@ class MainActivity : Activity() {
                         setRequestProperty("Content-Type", "application/json")
                         setRequestProperty("Accept", "application/json, text/event-stream")
                         sessionId?.let { setRequestProperty("Mcp-Session-Id", it) }
+                        negotiatedProtocol?.let { setRequestProperty("MCP-Protocol-Version", it) }
                     }
                     try {
                         val payload = JSONObject()
@@ -751,7 +753,8 @@ class MainActivity : Activity() {
                         .put("capabilities", JSONObject())
                         .put("clientInfo", JSONObject().put("name", "AgentNova").put("version", "1.0"))
                 ) ?: throw IllegalStateException("Server tidak mengembalikan hasil initialize.")
-                val protocol = init.optString("protocolVersion", "unknown")
+                val protocol = init.optString("protocolVersion", "2024-11-05")
+                negotiatedProtocol = protocol
                 rpc("notifications/initialized", JSONObject(), notification = true)
                 val toolsResult = rpc("tools/list", JSONObject().put("cursor", JSONObject.NULL))
                     ?: throw IllegalStateException("Server tidak mengembalikan daftar tools.")
