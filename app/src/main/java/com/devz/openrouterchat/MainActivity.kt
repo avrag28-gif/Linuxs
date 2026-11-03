@@ -474,6 +474,8 @@ class MainActivity : Activity() {
                         "Jika diminta melakukan tindakan yang belum didukung, jelaskan keterbatasannya dan berikan langkah manual. " +
                         "Gunakan MCP hanya jika relevan dengan permintaan pengguna, jangan pernah mengklaim tool sudah berjalan sebelum hasil diterima. " +
                         "Ajukan maksimal satu MCP tool call per giliran; jangan membuat beberapa tindakan sekaligus. " +
+                        "Untuk tindakan Android yang tersedia, gunakan agentnova_device_action dengan action pip, camera, volume, settings, atau app_settings; " +
+                        "aplikasi akan meminta persetujuan eksplisit pengguna sebelum menjalankannya. Jangan mengklaim tindakan berhasil sebelum hasil eksekusi diterima. " +
                         "Jaga privasi pengguna dan jangan meminta API key atau kata sandi di dalam percakapan."
                 ))
                 if (memory.isNotBlank()) requestMessages.put(JSONObject().put(
