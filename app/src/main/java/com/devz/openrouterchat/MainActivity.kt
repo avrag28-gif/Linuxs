@@ -285,7 +285,18 @@ class MainActivity : Activity() {
             background = null
         }
         composer.addView(prompt, LinearLayout.LayoutParams(-1, -2))
-        if (attachedName.isNotBlank()) composer.addView(label("📎 $attachedName", 11f, muted).apply { setPadding(0, 0, 0, dp(7)) })
+        if (attachedName.isNotBlank()) {
+            val attachmentRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            attachmentRow.addView(label(if (attachedImageData.isNotBlank()) "🖼 $attachedName" else "📎 $attachedName", 11f, muted), LinearLayout.LayoutParams(0, -2, 1f))
+            attachmentRow.addView(label("Hapus ×", 11f, accent, true).apply {
+                setPadding(dp(10), dp(5), dp(4), dp(7))
+                setOnClickListener {
+                    attachedName = ""; attachedText = ""; attachedImageData = ""; attachedImageMime = ""
+                    showChat()
+                }
+            })
+            composer.addView(attachmentRow)
+        }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         status = label(if (ProviderRegistry.selected(this).requiresKey && ProviderRegistry.apiKey(this).isBlank()) "Tambahkan API key di Pengaturan" else "", 11f, muted)
         row.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
