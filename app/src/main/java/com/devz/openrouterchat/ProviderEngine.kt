@@ -73,13 +73,18 @@ object OpenAiCompatibleClient {
     fun chat(
         context: Context,
         messages: JSONArray,
+        providerSnapshot: AiProvider? = null,
+        apiKeySnapshot: String? = null,
+        baseUrlSnapshot: String? = null,
+        modelSnapshot: String? = null,
         connectTimeoutMs: Int = 20000,
         readTimeoutMs: Int = 90000
     ): String {
-        val provider = ProviderRegistry.selected(context)
-        val endpoint = ProviderRegistry.baseUrl(context, provider).trimEnd('/') + "/chat/completions"
-        val key = ProviderRegistry.apiKey(context, provider)
-        val model = ProviderRegistry.model(context, provider)
+        // Optional snapshots keep an in-flight request independent from later settings edits.
+        val provider = providerSnapshot ?: ProviderRegistry.selected(context)
+        val endpoint = (baseUrlSnapshot ?: ProviderRegistry.baseUrl(context, provider)).trimEnd('/') + "/chat/completions"
+        val key = apiKeySnapshot ?: ProviderRegistry.apiKey(context, provider)
+        val model = modelSnapshot ?: ProviderRegistry.model(context, provider)
         require(endpoint.startsWith("https://") || endpoint.startsWith("http://")) { "Base URL provider belum valid." }
         require(!provider.requiresKey || key.isNotBlank()) { "API key untuk ${provider.label} belum diisi." }
         require(model.isNotBlank()) { "Nama model belum diisi." }
