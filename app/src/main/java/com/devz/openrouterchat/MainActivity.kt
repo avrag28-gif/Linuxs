@@ -540,14 +540,18 @@ class MainActivity : Activity() {
             } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
             runOnUiThread {
                 requestMessagesView.removeView(loading)
+                val finalAnswer = if (answer.startsWith("[AGENTNOVA_MCP_PROPOSALS]")) {
+                    confirmMcpProposals(answer.removePrefix("[AGENTNOVA_MCP_PROPOSALS]"))
+                    "Saya mengusulkan penggunaan MCP tool. Periksa nama tool dan argumennya, lalu setujui atau batalkan sebelum tool dijalankan."
+                } else answer
                 val destination = sessions.firstOrNull { it.optString("id") == requestSessionId }
                 if (destination != null) {
                     val destinationMessages = destination.optJSONArray("messages") ?: JSONArray()
-                    destinationMessages.put(JSONObject().put("role", "assistant").put("content", answer))
+                    destinationMessages.put(JSONObject().put("role", "assistant").put("content", finalAnswer))
                     destination.put("messages", destinationMessages)
                     saveSessions()
                     if (currentSessionId == requestSessionId) {
-                        addMessageView("AgentNova", answer, false)
+                        addMessageView("AgentNova", finalAnswer, false)
                         if (::sendButton.isInitialized) sendButton.isEnabled = true
                         if (::status.isInitialized) status.text = ""
                         buildDrawer()
@@ -924,6 +928,25 @@ class MainActivity : Activity() {
     }
 
 
+    /** Validate AI-proposed calls against discovered MCP schemas, then ask approval. */
+    private fun confirmMcpProposals(raw: String) {
+        val proposals = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
+        if (proposals.length() == 0) { Toast.makeText(this, "Proposal MCP tidak valid.", Toast.LENGTH_LONG).show(); return }
+        val catalog = try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() }
+        for (i in 0 until proposals.length()) {
+            val proposal = proposals.optJSONObject(i) ?: continue
+            val name = proposal.optString("name")
+            val allowed = (0 until catalog.length()).any { catalog.optJSONObject(it)?.optString("name") == name }
+            if (!allowed) { Toast.makeText(this, "Tool tidak ada dalam katalog MCP.", Toast.LENGTH_LONG).show(); return }
+            val args = proposal.optJSONObject("arguments") ?: JSONObject()
+            android.app.AlertDialog.Builder(this).setTitle("AI meminta izin MCP")
+                .setMessage("Tool: $name\nArgumen:\n${args.toString(2).take(2400)}\n\nTool eksternal dapat membaca atau mengubah data. Jalankan hanya jika kamu percaya server dan argumennya.")
+                .setNegativeButton("Batal", null)
+                .setPositiveButton("Setujui & jalankan") { _, _ -> executeMcpTool(name, args) }
+                .show()
+            return
+        }
+    }
     /** Explicit, user-approved MCP invocation; never auto-runs discovered tools. */
     private fun mcpToolDialog() {
         val nameField = EditText(this).apply { hint = "Nama tool persis seperti tools/list"; setTextColor(primary); setHintTextColor(muted); isSingleLine = true }
