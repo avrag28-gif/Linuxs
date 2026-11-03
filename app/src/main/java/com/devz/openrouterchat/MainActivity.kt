@@ -882,6 +882,11 @@ class MainActivity : Activity() {
                     cursor = toolsResult.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" }
                     pages++
                 } while (cursor != null && pages < 10 && discoveredTools.size < 100)
+                // Preserve server-provided JSON schemas for future model tool definitions.
+                // Never infer argument schemas from display labels.
+                val toolCatalog = JSONArray()
+                discoveredTools.forEach { tool -> toolCatalog.put(JSONObject(tool.toString())) }
+                prefs.edit().putString("mcp_tools_json", toolCatalog.toString()).apply()
                 val names = discoveredTools.mapNotNull { tool ->
                     val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
                     val description = tool.optString("description").takeIf { it.isNotBlank() }
