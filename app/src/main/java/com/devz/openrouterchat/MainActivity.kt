@@ -1040,7 +1040,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, result.take(220), Toast.LENGTH_LONG).show()
                 if (::page.isInitialized && page.childCount > 0) {
                     // Refresh settings so the latest discovery result is visible.
-                    if (mcpField.isInitialized) showSettings()
+                    if (::mcpField.isInitialized) showSettings()
                 }
             }
         }
