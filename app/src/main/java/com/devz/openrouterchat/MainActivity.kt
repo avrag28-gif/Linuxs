@@ -1164,7 +1164,8 @@ class MainActivity : Activity() {
                                             }
                                         } ?: throw IllegalStateException("File tidak dapat dibuka untuk pembacaan bertahap.")
                                         var safeLength = bytes.size
-                                        if (bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
+                                        val startsUtf16 = offset == 0L && bytes.size >= 2 && ((bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) || (bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()))
+                                        if (!startsUtf16 && bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
                                             var leadIndex = bytes.size - 1
                                             var continuationCount = 0
                                             while (leadIndex >= 0 && (bytes[leadIndex].toInt() and 0xC0) == 0x80 && continuationCount < 3) {
