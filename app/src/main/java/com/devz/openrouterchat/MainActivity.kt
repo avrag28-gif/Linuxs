@@ -478,14 +478,20 @@ class MainActivity : Activity() {
                     if (content.length > 20000) item.put("content", content.take(20000) + "\\n[Konten dipotong untuk batas konteks.]")
                     requestMessages.put(item)
                 }
-                // Attach the selected image to the latest user turn for vision-capable compatible APIs.
-                if (provider.id != "anthropic" && imageDataSnapshot.isNotBlank()) {
+                // Format image payload for the selected provider vision API.
+                if (imageDataSnapshot.isNotBlank()) {
                     val last = requestMessages.optJSONObject(requestMessages.length() - 1)
                     if (last != null && last.optString("role") == "user") {
                         val parts = JSONArray()
-                            .put(JSONObject().put("type", "text").put("text", last.optString("content")))
-                            .put(JSONObject().put("type", "image_url").put("image_url",
+                        if (provider.id == "anthropic") {
+                            parts.put(JSONObject().put("type", "text").put("text", last.optString("content")))
+                            parts.put(JSONObject().put("type", "image").put("source", JSONObject()
+                                .put("type", "base64").put("media_type", imageMimeSnapshot).put("data", imageDataSnapshot)))
+                        } else {
+                            parts.put(JSONObject().put("type", "text").put("text", last.optString("content")))
+                            parts.put(JSONObject().put("type", "image_url").put("image_url",
                                 JSONObject().put("url", "data:$imageMimeSnapshot;base64,$imageDataSnapshot")))
+                        }
                         last.put("content", parts)
                     }
                 }
