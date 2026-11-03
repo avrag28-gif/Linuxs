@@ -569,7 +569,7 @@ class MainActivity : Activity() {
                                     .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_selected_file")
-                        .put("description", "Read a user-selected text file of any size in sequential chunks (maximum 8192 bytes per call) using byte offset and length; list up to 100,000 entries in a user-selected folder after approval.")
+                        .put("description", "Read a user-selected UTF-8 text file of any size in sequential chunks (maximum 8192 bytes per call), preserving UTF-8 character boundaries using byte offset and length; list up to 100,000 entries in a user-selected folder after approval.")
                         .put("input_schema", JSONObject().put("type", "object")
                             .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                 .put("enum", JSONArray().put("read").put("list")))
@@ -1163,13 +1163,33 @@ class MainActivity : Activity() {
                                                 out.toByteArray()
                                             }
                                         } ?: throw IllegalStateException("File tidak dapat dibuka untuk pembacaan bertahap.")
-                                        val decoded = when {
-                                            offset == 0L && bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
-                                            offset == 0L && bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
-                                            offset == 0L && bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
-                                            else -> String(bytes, Charsets.UTF_8)
+                                        var safeLength = bytes.size
+                                        if (bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
+                                            var leadIndex = bytes.size - 1
+                                            var continuationCount = 0
+                                            while (leadIndex >= 0 && (bytes[leadIndex].toInt() and 0xC0) == 0x80 && continuationCount < 3) {
+                                                leadIndex--
+                                                continuationCount++
+                                            }
+                                            if (leadIndex >= 0) {
+                                                val lead = bytes[leadIndex].toInt() and 0xFF
+                                                val expectedBytes = when {
+                                                    lead and 0x80 == 0 -> 1
+                                                    lead and 0xE0 == 0xC0 -> 2
+                                                    lead and 0xF0 == 0xE0 -> 3
+                                                    lead and 0xF8 == 0xF0 -> 4
+                                                    else -> 1
+                                                }
+                                                if (expectedBytes > bytes.size - leadIndex) safeLength = leadIndex
+                                            }
                                         }
-                                        val nextOffset = offset + bytes.size
+                                        val decoded = when {
+                                            offset == 0L && safeLength >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, safeLength - 2, Charsets.UTF_16LE)
+                                            offset == 0L && safeLength >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, safeLength - 2, Charsets.UTF_16BE)
+                                            offset == 0L && safeLength >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, safeLength - 3, Charsets.UTF_8)
+                                            else -> String(bytes, 0, safeLength, Charsets.UTF_8)
+                                        }
+                                        val nextOffset = offset + safeLength
                                         val hasMore = if (fileSize >= 0L) nextOffset < fileSize else bytes.size == chunkSize
                                         val sizeLabel = if (fileSize >= 0L) "ukuran total $fileSize byte" else "ukuran total tidak dilaporkan penyedia"
                                         "Potongan file '$selectedName' (offset $offset, ${bytes.size} byte, $sizeLabel):\n" + decoded +
