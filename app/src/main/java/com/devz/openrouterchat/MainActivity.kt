@@ -935,6 +935,10 @@ class MainActivity : Activity() {
     private fun confirmMcpProposals(raw: String) {
         val proposals = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
         if (proposals.length() == 0) { Toast.makeText(this, "Proposal MCP tidak valid.", Toast.LENGTH_LONG).show(); return }
+        if (proposals.length() > 1) {
+            Toast.makeText(this, "Model mengusulkan beberapa tool. Minta satu tindakan MCP dalam satu pesan.", Toast.LENGTH_LONG).show()
+            return
+        }
         val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", "")) {
             try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() }
         } else JSONArray()
