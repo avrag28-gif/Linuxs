@@ -1184,10 +1184,24 @@ class MainActivity : Activity() {
                                                 if (expectedBytes > bytes.size - leadIndex) safeLength = leadIndex
                                             }
                                         }
-                                        val decoded = when {
-                                            offset == 0L && safeLength >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, safeLength - 2, Charsets.UTF_16LE)
-                                            offset == 0L && safeLength >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, safeLength - 2, Charsets.UTF_16BE)
-                                            offset == 0L && safeLength >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, safeLength - 3, Charsets.UTF_8)
+                                        val bom = contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                                            java.io.FileInputStream(descriptor.fileDescriptor).use { head ->
+                                                val first = head.read()
+                                                val second = head.read()
+                                                val third = head.read()
+                                                when {
+                                                    first == 0xFF && second == 0xFE -> "UTF16LE"
+                                                    first == 0xFE && second == 0xFF -> "UTF16BE"
+                                                    first == 0xEF && second == 0xBB && third == 0xBF -> "UTF8BOM"
+                                                    else -> "UTF8"
+                                                }
+                                            }
+                                        } ?: "UTF8"
+                                        if ((bom == "UTF16LE" || bom == "UTF16BE") && safeLength % 2 != 0 && (fileSize < 0L || offset + safeLength < fileSize)) safeLength--
+                                        val decoded = when (bom) {
+                                            "UTF16LE" -> String(bytes, if (offset == 0L) 2 else 0, safeLength - if (offset == 0L) 2 else 0, Charsets.UTF_16LE)
+                                            "UTF16BE" -> String(bytes, if (offset == 0L) 2 else 0, safeLength - if (offset == 0L) 2 else 0, Charsets.UTF_16BE)
+                                            "UTF8BOM" -> String(bytes, if (offset == 0L) 3 else 0, safeLength - if (offset == 0L) 3 else 0, Charsets.UTF_8)
                                             else -> String(bytes, 0, safeLength, Charsets.UTF_8)
                                         }
                                         val nextOffset = offset + safeLength
