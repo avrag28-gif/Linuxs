@@ -1131,7 +1131,21 @@ class MainActivity : Activity() {
                                     if (!looksText) {
                                         "File bukan tipe teks yang didukung. MIME: " + mime.ifBlank { "tidak diketahui" }
                                     } else {
-                                        val offset = args.optLong("offset", 0L).coerceAtLeast(0L)
+                                        val bom = contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
+                                            java.io.FileInputStream(descriptor.fileDescriptor).use { head ->
+                                                val first = head.read()
+                                                val second = head.read()
+                                                val third = head.read()
+                                                when {
+                                                    first == 0xFF && second == 0xFE -> "UTF16LE"
+                                                    first == 0xFE && second == 0xFF -> "UTF16BE"
+                                                    first == 0xEF && second == 0xBB && third == 0xBF -> "UTF8BOM"
+                                                    else -> "UTF8"
+                                                }
+                                            }
+                                        } ?: "UTF8"
+                                        val requestedOffset = args.optLong("offset", 0L).coerceAtLeast(0L)
+                                        val offset = if (bom == "UTF16LE" || bom == "UTF16BE") requestedOffset - (requestedOffset % 2L) else requestedOffset
                                         val chunkSize = args.optInt("length", 8192).coerceIn(1, 8192)
                                         val sizeCursor = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
                                         val providerSize = sizeCursor?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else -1L } ?: -1L
@@ -1164,19 +1178,6 @@ class MainActivity : Activity() {
                                             }
                                         } ?: throw IllegalStateException("File tidak dapat dibuka untuk pembacaan bertahap.")
                                         var safeLength = bytes.size
-                                        val bom = contentResolver.openFileDescriptor(uri, "r")?.use { descriptor ->
-                                            java.io.FileInputStream(descriptor.fileDescriptor).use { head ->
-                                                val first = head.read()
-                                                val second = head.read()
-                                                val third = head.read()
-                                                when {
-                                                    first == 0xFF && second == 0xFE -> "UTF16LE"
-                                                    first == 0xFE && second == 0xFF -> "UTF16BE"
-                                                    first == 0xEF && second == 0xBB && third == 0xBF -> "UTF8BOM"
-                                                    else -> "UTF8"
-                                                }
-                                            }
-                                        } ?: "UTF8"
                                         val startsUtf16 = offset == 0L && bytes.size >= 2 && ((bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) || (bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()))
                                         if ((bom == "UTF8" || bom == "UTF8BOM") && !startsUtf16 && bytes.size == chunkSize && (fileSize < 0L || offset + bytes.size < fileSize)) {
                                             var leadIndex = bytes.size - 1
