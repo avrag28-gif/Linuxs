@@ -19,12 +19,14 @@ import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.TranslateAnimation
 import android.speech.RecognizerIntent
+import android.speech.tts.TextToSpeech
 import android.widget.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.Locale
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -62,6 +64,7 @@ class MainActivity : Activity() {
     private var sessions = mutableListOf<JSONObject>()
     private var currentSessionId = ""
     private val REQ_VOICE = 103
+    private var speechOutput: TextToSpeech? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -521,7 +524,12 @@ class MainActivity : Activity() {
         box.addView(label(text, 14f, primary).apply {
             setPadding(0, dp(6), 0, 0)
             setTextIsSelectable(true)
-        })
+        })        if (!mine && text.isNotBlank()) {
+            box.addView(label("🔊 Dengarkan", 11f, muted, true).apply {
+                setPadding(0, dp(8), 0, 0)
+                setOnClickListener { speakText(text) }
+            })
+        }
         val lp = LinearLayout.LayoutParams(-1, -2)
         lp.bottomMargin = dp(9)
         if (mine) lp.leftMargin = dp(22) else lp.rightMargin = dp(22)
@@ -946,6 +954,24 @@ class MainActivity : Activity() {
         }
         try { startActivityForResult(intent, REQ_VOICE) }
         catch (_: Exception) { Toast.makeText(this, "Layanan pengenalan suara tidak tersedia.", Toast.LENGTH_LONG).show() }
+    }
+
+    private fun speakText(text: String) {
+        if (speechOutput == null) {
+            speechOutput = TextToSpeech(this) { state ->
+                if (state == TextToSpeech.SUCCESS) {
+                    speechOutput?.language = Locale.getDefault()
+                    speechOutput?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "agentnova_reply")
+                } else Toast.makeText(this, "Text-to-speech tidak tersedia.", Toast.LENGTH_SHORT).show()
+            }
+        } else speechOutput?.speak(text.take(3500), TextToSpeech.QUEUE_FLUSH, null, "agentnova_reply")
+    }
+
+    override fun onDestroy() {
+        speechOutput?.stop()
+        speechOutput?.shutdown()
+        speechOutput = null
+        super.onDestroy()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
