@@ -384,7 +384,12 @@ class MainActivity : Activity() {
                 try {
                     val uri = Uri.parse(savedUri)
                     contentResolver.persistedUriPermissions.filter { it.uri == uri }.forEach { permission ->
-                        contentResolver.releasePersistableUriPermission(uri, permission.modeFlags)
+                        if (permission.isReadPermission) {
+                            contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        if (permission.isWritePermission) {
+                            contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                        }
                     }
                 } catch (_: Exception) { }
             }
