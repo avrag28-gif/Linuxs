@@ -1106,10 +1106,6 @@ class MainActivity : Activity() {
         toolOutput: String
     ) {
         val provider = ProviderRegistry.selected(this)
-        if (provider.id == "anthropic") {
-            Toast.makeText(this, "Hasil MCP tersimpan. Lanjutan otomatis untuk Claude akan ditambahkan pada integrasi native.", Toast.LENGTH_LONG).show()
-            return
-        }
         val key = ProviderRegistry.apiKey(this, provider).trim()
         val baseUrl = ProviderRegistry.baseUrl(this, provider)
         val model = ProviderRegistry.model(this, provider)
