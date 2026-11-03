@@ -569,10 +569,12 @@ class MainActivity : Activity() {
                                     .put("pip").put("camera").put("volume").put("settings").put("app_settings"))))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_selected_file")
-                        .put("description", "Read a user-selected text, source-code, Markdown, CSV, JSON, XML, HTML, YAML, or configuration file up to 512 KB, preserving line breaks, or list a user-selected folder after explicit approval.")
+                        .put("description", "Read a user-selected text file up to 100 GB in sequential chunks (maximum 8192 bytes per call) using byte offset and length; list up to 100,000 entries in a user-selected folder after approval.")
                         .put("input_schema", JSONObject().put("type", "object")
                             .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                 .put("enum", JSONArray().put("read").put("list")))
+                                .put("offset", JSONObject().put("type", "integer").put("description", "Starting byte offset; default 0"))
+                                .put("length", JSONObject().put("type", "integer").put("description", "Chunk byte length, maximum 8192; default 8192")))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_web_search")
                         .put("description", "Cari informasi publik di web untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
@@ -613,10 +615,12 @@ class MainActivity : Activity() {
                                 .put("required", JSONArray().put("action")).put("additionalProperties", false))))
                     modelTools.put(JSONObject().put("type", "function").put("function",
                         JSONObject().put("name", "agentnova_selected_file")
-                            .put("description", "Read a user-selected text, source-code, Markdown, CSV, JSON, XML, HTML, YAML, or configuration file up to 512 KB, preserving line breaks, or list a user-selected folder after explicit approval.")
+                            .put("description", "Read a user-selected text file up to 100 GB in sequential chunks (maximum 8192 bytes per call) using byte offset and length; list up to 100,000 entries in a user-selected folder after approval.")
                             .put("parameters", JSONObject().put("type", "object")
                                 .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                     .put("enum", JSONArray().put("read").put("list")))
+                                    .put("offset", JSONObject().put("type", "integer").put("description", "Starting byte offset; default 0"))
+                                    .put("length", JSONObject().put("type", "integer").put("description", "Chunk byte length, maximum 8192; default 8192")))
                                 .put("required", JSONArray().put("action")).put("additionalProperties", false))))
                     modelTools.put(JSONObject().put("type", "function").put("function",
                         JSONObject().put("name", "agentnova_web_search")
@@ -1110,7 +1114,7 @@ class MainActivity : Activity() {
                 if (selectedUri.isBlank() || (action == "read" && selectedKind != "file") || (action == "list" && selectedKind != "folder")) {
                     Toast.makeText(this, "Pilih sumber yang sesuai melalui Tambah sumber terlebih dahulu.", Toast.LENGTH_LONG).show(); return
                 }
-                val description = if (action == "read") "Membaca isi teks asli file dengan batas 512 KB. '$selectedName'." else "Menampilkan maksimal 100.000 nama item folder '$selectedName'."
+                val description = if (action == "read") "Membaca file teks maksimal 100 GB secara bertahap (maksimal 8 KB per bagian). '$selectedName'." else "Menampilkan maksimal 100.000 nama item folder '$selectedName'."
                 android.app.AlertDialog.Builder(this).setTitle("AI meminta akses file")
                     .setMessage("$description\n\nHanya sumber yang kamu pilih melalui pemilih dokumen Android yang dapat diakses.")
                     .setNegativeButton("Batal", null)
@@ -1127,26 +1131,39 @@ class MainActivity : Activity() {
                                     if (!looksText) {
                                         "File bukan tipe teks yang didukung. MIME: " + mime.ifBlank { "tidak diketahui" }
                                     } else {
-                                        val bytes = contentResolver.openInputStream(uri)?.use { input ->
-                                            val out = java.io.ByteArrayOutputStream()
-                                            val buffer = ByteArray(4096)
-                                            var total = 0
-                                            while (true) {
-                                                val n = input.read(buffer)
-                                                if (n < 0) break
-                                                total += n
-                                                if (total > 524288) throw IllegalArgumentException("File melebihi batas baca 512 KB. Pilih file yang lebih kecil atau pecah menjadi beberapa bagian.")
-                                                out.write(buffer, 0, n)
+                                        val maxFileBytes = 100L * 1024L * 1024L * 1024L
+                                        val offset = args.optLong("offset", 0L).coerceAtLeast(0L)
+                                        val chunkSize = args.optInt("length", 8192).coerceIn(1, 8192)
+                                        val sizeCursor = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)
+                                        val providerSize = sizeCursor?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) else -1L } ?: -1L
+                                        val descriptorSize = try { contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L } catch (_: Exception) { -1L }
+                                        val fileSize = if (providerSize >= 0L) providerSize else descriptorSize
+                                        if (fileSize < 0L) throw IllegalArgumentException("Penyedia file tidak melaporkan ukuran file; batas maksimum 100 GB tidak dapat diverifikasi.")
+                                        if (fileSize > maxFileBytes) throw IllegalArgumentException("Ukuran file melebihi batas maksimum 100 GB.")
+                                        if (offset > fileSize) throw IllegalArgumentException("Offset berada di luar ukuran file.")
+                                        val bytes = contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                                            java.io.FileInputStream(pfd.fileDescriptor).use { input ->
+                                                val channel = input.channel
+                                                if (channel.position(offset) != offset) throw IllegalStateException("Tidak dapat berpindah ke posisi byte yang diminta.")
+                                                val buffer = ByteArray(chunkSize)
+                                                val out = java.io.ByteArrayOutputStream(chunkSize)
+                                                while (out.size() < chunkSize) {
+                                                    val n = input.read(buffer, 0, minOf(buffer.size, chunkSize - out.size()))
+                                                    if (n < 0) break
+                                                    out.write(buffer, 0, n)
+                                                }
+                                                out.toByteArray()
                                             }
-                                            out.toByteArray()
-                                        } ?: throw IllegalStateException("File tidak dapat dibaca.")
+                                        } ?: throw IllegalStateException("File tidak dapat dibuka untuk pembacaan bertahap.")
                                         val decoded = when {
-                                            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
-                                            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
-                                            bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+                                            offset == 0L && bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+                                            offset == 0L && bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+                                            offset == 0L && bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
                                             else -> String(bytes, Charsets.UTF_8)
                                         }
-                                        "Isi file '$selectedName' (teks asli; ${bytes.size} byte):\n" + decoded
+                                        val nextOffset = offset + bytes.size
+                                        "Potongan file '$selectedName' (offset $offset, \${bytes.size} byte, ukuran total $fileSize byte):\n" + decoded +
+                                            if (nextOffset < fileSize) "\n[Bagian berikutnya: action=read, offset=$nextOffset, length=8192]" else "\n[SELESAI: akhir file tercapai.]"
                                     }
                                 } else {
                                     val tree = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
