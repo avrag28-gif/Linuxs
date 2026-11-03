@@ -514,7 +514,8 @@ class MainActivity : Activity() {
                         model = model
                     )
                 } else {
-                    val catalog = try { JSONArray(prefs.getString("mcp_tools_json", "[]")) }
+                    val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", ""))
+                        try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } else JSONArray()
                         catch (_: Exception) { JSONArray() }
                     val modelTools = JSONArray()
                     for (index in 0 until catalog.length()) {
@@ -905,7 +906,8 @@ class MainActivity : Activity() {
                 // Never infer argument schemas from display labels.
                 val toolCatalog = JSONArray()
                 discoveredTools.forEach { tool -> toolCatalog.put(JSONObject(tool.toString())) }
-                prefs.edit().putString("mcp_tools_json", toolCatalog.toString()).apply()
+                prefs.edit().putString("mcp_tools_json", toolCatalog.toString())
+                    .putString("mcp_tools_endpoint", endpoint).apply()
                 val names = discoveredTools.mapNotNull { tool ->
                     val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
                     val description = tool.optString("description").takeIf { it.isNotBlank() }
@@ -932,7 +934,8 @@ class MainActivity : Activity() {
     private fun confirmMcpProposals(raw: String) {
         val proposals = try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
         if (proposals.length() == 0) { Toast.makeText(this, "Proposal MCP tidak valid.", Toast.LENGTH_LONG).show(); return }
-        val catalog = try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() }
+        val catalog = if (prefs.getString("mcp_tools_endpoint", "") == prefs.getString("mcp_url", ""))
+            try { JSONArray(prefs.getString("mcp_tools_json", "[]")) } catch (_: Exception) { JSONArray() } else JSONArray()
         for (i in 0 until proposals.length()) {
             val proposal = proposals.optJSONObject(i) ?: continue
             val name = proposal.optString("name")
