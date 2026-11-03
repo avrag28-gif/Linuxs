@@ -349,6 +349,7 @@ class MainActivity : Activity() {
         mcpRow.addView(smallButton("Tes / daftar tools") { discoverMcpTools(mcpField.text.toString().trim()) },
             LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(5) })
         body.addView(mcpRow)
+        body.addView(smallButton("Jalankan MCP tool (manual + konfirmasi)") { mcpToolDialog() })
         body.addView(label(prefs.getString("mcp_tools", "Belum ada daftar tools MCP.") ?: "", 11f, muted).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
@@ -821,6 +822,100 @@ class MainActivity : Activity() {
                     // Refresh settings so the latest discovery result is visible.
                     if (mcpField.isInitialized) showSettings()
                 }
+            }
+        }
+    }
+
+
+    /** Explicit, user-approved MCP invocation; never auto-runs discovered tools. */
+    private fun mcpToolDialog() {
+        val nameField = EditText(this).apply { hint = "Nama tool persis seperti tools/list"; setTextColor(primary); setHintTextColor(muted); isSingleLine = true }
+        val argsField = EditText(this).apply { hint = "Arguments JSON, contoh: {\"query\":\"hello\"}"; setTextColor(primary); setHintTextColor(muted); minLines = 3; gravity = Gravity.TOP }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(4), dp(16), 0)
+            addView(nameField); addView(argsField)
+        }
+        val dialog = android.app.AlertDialog.Builder(this).setTitle("Panggil MCP tool")
+            .setMessage("Masukkan nama tool dari hasil discovery dan argumen JSON.")
+            .setView(box).setNegativeButton("Batal", null).setPositiveButton("Tinjau", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val toolName = nameField.text.toString().trim()
+                val rawArgs = argsField.text.toString().trim().ifBlank { "{}" }
+                if (toolName.isBlank()) { nameField.error = "Nama tool wajib diisi"; return@setOnClickListener }
+                val args = try { JSONObject(rawArgs) } catch (_: Exception) { argsField.error = "JSON tidak valid"; return@setOnClickListener }
+                dialog.dismiss()
+                android.app.AlertDialog.Builder(this).setTitle("Konfirmasi MCP")
+                    .setMessage("Tool: $toolName\nArgumen:\n" + args.toString(2).take(1800) +
+                        "\n\nTool eksternal dapat membaca atau mengubah data sesuai izin server.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Jalankan") { _, _ -> executeMcpTool(toolName, args) }.show()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun executeMcpTool(toolName: String, arguments: JSONObject) {
+        val endpoint = prefs.getString("mcp_url", "").orEmpty().trim()
+        val parsed = try { URL(endpoint) } catch (_: Exception) { null }
+        if (parsed == null || (parsed.protocol != "https" && parsed.protocol != "http")) {
+            Toast.makeText(this, "Simpan endpoint MCP HTTP(S) yang valid terlebih dahulu.", Toast.LENGTH_LONG).show(); return
+        }
+        statusText("Menjalankan MCP tool…")
+        thread {
+            val output = try {
+                var sessionId: String? = null
+                var protocol = "2024-11-05"
+                var nextId = 1
+                fun rpc(method: String, params: JSONObject, notification: Boolean = false): JSONObject? {
+                    val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"; connectTimeout = 12000; readTimeout = 30000; doOutput = true
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("Accept", "application/json, text/event-stream")
+                        sessionId?.let { setRequestProperty("Mcp-Session-Id", it) }
+                        setRequestProperty("MCP-Protocol-Version", protocol)
+                    }
+                    try {
+                        val payload = JSONObject().put("jsonrpc", "2.0").put("method", method).put("params", params)
+                        if (!notification) payload.put("id", nextId++)
+                        conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                        val code = conn.responseCode
+                        conn.getHeaderField("Mcp-Session-Id")?.takeIf { it.isNotBlank() }?.let { sessionId = it }
+                        val raw = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                            ?.bufferedReader()?.use { it.readText().take(250000) }.orEmpty()
+                        if (code !in 200..299) throw IllegalStateException("MCP HTTP $code: " + raw.take(500))
+                        if (notification || raw.isBlank()) return null
+                        val data = raw.lineSequence().filter { it.trim().startsWith("data:") }
+                            .map { it.trim().removePrefix("data:").trim() }.firstOrNull { it.startsWith("{") }
+                            ?: raw.trim().takeIf { it.startsWith("{") }
+                            ?: throw IllegalStateException("Respons MCP bukan JSON/SSE yang dikenali.")
+                        val response = JSONObject(data)
+                        if (response.has("error")) throw IllegalStateException(response.optJSONObject("error")?.optString("message") ?: "RPC error")
+                        return response.optJSONObject("result") ?: throw IllegalStateException("Result MCP kosong.")
+                    } finally { conn.disconnect() }
+                }
+                val init = rpc("initialize", JSONObject().put("protocolVersion", protocol)
+                    .put("capabilities", JSONObject())
+                    .put("clientInfo", JSONObject().put("name", "AgentNova").put("version", "1.0")))
+                    ?: throw IllegalStateException("Initialize tidak mengembalikan result.")
+                protocol = init.optString("protocolVersion", protocol)
+                rpc("notifications/initialized", JSONObject(), true)
+                val result = rpc("tools/call", JSONObject().put("name", toolName).put("arguments", arguments))
+                    ?: throw IllegalStateException("Tool tidak mengembalikan result.")
+                val content = result.optJSONArray("content") ?: JSONArray()
+                val textOutput = (0 until content.length()).mapNotNull { i ->
+                    val item = content.optJSONObject(i) ?: return@mapNotNull null
+                    if (item.optString("type") == "text") item.optString("text")
+                    else if (item.optString("type") == "image") "[Image output belum dapat ditampilkan]"
+                    else null
+                }.joinToString("\n")
+                if (result.optBoolean("isError")) "Tool melaporkan error:\n$textOutput"
+                else textOutput.ifBlank { result.toString(2).take(6000) }
+            } catch (e: Exception) { "MCP tool gagal: " + (e.message ?: "kesalahan tidak diketahui") }
+            runOnUiThread {
+                if (::status.isInitialized) status.text = "MCP selesai"
+                android.app.AlertDialog.Builder(this).setTitle("Hasil MCP tool")
+                    .setMessage(output.take(10000)).setPositiveButton("Tutup", null).show()
             }
         }
     }
