@@ -865,7 +865,7 @@ class MainActivity : Activity() {
         thread {
             val output = try {
                 var sessionId: String? = null
-                var protocol = "2024-11-05"
+                var protocol: String? = null
                 var nextId = 1
                 fun rpc(method: String, params: JSONObject, notification: Boolean = false): JSONObject? {
                     val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -873,7 +873,7 @@ class MainActivity : Activity() {
                         setRequestProperty("Content-Type", "application/json")
                         setRequestProperty("Accept", "application/json, text/event-stream")
                         sessionId?.let { setRequestProperty("Mcp-Session-Id", it) }
-                        setRequestProperty("MCP-Protocol-Version", protocol)
+                        protocol?.let { setRequestProperty("MCP-Protocol-Version", it) }
                     }
                     try {
                         val payload = JSONObject().put("jsonrpc", "2.0").put("method", method).put("params", params)
@@ -894,11 +894,11 @@ class MainActivity : Activity() {
                         return response.optJSONObject("result") ?: throw IllegalStateException("Result MCP kosong.")
                     } finally { conn.disconnect() }
                 }
-                val init = rpc("initialize", JSONObject().put("protocolVersion", protocol)
+                val init = rpc("initialize", JSONObject().put("protocolVersion", "2024-11-05")
                     .put("capabilities", JSONObject())
                     .put("clientInfo", JSONObject().put("name", "AgentNova").put("version", "1.0")))
                     ?: throw IllegalStateException("Initialize tidak mengembalikan result.")
-                protocol = init.optString("protocolVersion", protocol)
+                protocol = init.optString("protocolVersion", "2024-11-05")
                 rpc("notifications/initialized", JSONObject(), true)
                 val result = rpc("tools/call", JSONObject().put("name", toolName).put("arguments", arguments))
                     ?: throw IllegalStateException("Tool tidak mengembalikan result.")
