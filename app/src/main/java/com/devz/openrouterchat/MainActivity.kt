@@ -524,7 +524,8 @@ class MainActivity : Activity() {
         box.addView(label(text, 14f, primary).apply {
             setPadding(0, dp(6), 0, 0)
             setTextIsSelectable(true)
-        })        if (!mine && text.isNotBlank()) {
+        })
+        if (!mine && text.isNotBlank()) {
             box.addView(label("🔊 Dengarkan", 11f, muted, true).apply {
                 setPadding(0, dp(8), 0, 0)
                 setOnClickListener { speakText(text) }
@@ -579,7 +580,6 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated in Android API but supported for this activity")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) return
         if (requestCode == REQ_VOICE) {
             val spoken = data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spoken.isNullOrBlank() && ::prompt.isInitialized) {
@@ -588,6 +588,7 @@ class MainActivity : Activity() {
             }
             return
         }
+        if (resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         if (requestCode == REQ_FOLDER) {
             try {
