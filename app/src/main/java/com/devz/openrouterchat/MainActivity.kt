@@ -56,6 +56,8 @@ class MainActivity : Activity() {
     private lateinit var mcpField: EditText
     private var attachedText = ""
     private var attachedName = ""
+    private var attachedImageData = ""
+    private var attachedImageMime = ""
     private var webContext = ""
     private val REQ_FILE = 101
     private val REQ_FOLDER = 102
@@ -435,7 +437,7 @@ class MainActivity : Activity() {
         saveSessions()
         addMessageView("Kamu", message, true)
         prompt.setText("")
-        attachedText = ""; attachedName = ""; webContext = ""
+        attachedText = ""; attachedName = ""; attachedImageData = ""; attachedImageMime = ""; webContext = ""
         sendButton.isEnabled = false
         status.text = "Menunggu jawaban..."
         buildDrawer()
@@ -473,6 +475,17 @@ class MainActivity : Activity() {
                     val content = item.optString("content")
                     if (content.length > 20000) item.put("content", content.take(20000) + "\\n[Konten dipotong untuk batas konteks.]")
                     requestMessages.put(item)
+                }
+                // Attach the selected image to the latest user turn for vision-capable compatible APIs.
+                if (provider.id != "anthropic" && attachedImageData.isNotBlank()) {
+                    val last = requestMessages.optJSONObject(requestMessages.length() - 1)
+                    if (last != null && last.optString("role") == "user") {
+                        val parts = JSONArray()
+                            .put(JSONObject().put("type", "text").put("text", last.optString("content")))
+                            .put(JSONObject().put("type", "image_url").put("image_url",
+                                JSONObject().put("url", "data:$attachedImageMime;base64,$attachedImageData")))
+                        last.put("content", parts)
+                    }
                 }
                 if (provider.id == "anthropic") {
                     AnthropicClient.chat(
@@ -621,12 +634,21 @@ class MainActivity : Activity() {
             val name = queryDisplayName(uri) ?: (uri.lastPathSegment ?: "file")
             attachedName = name
             val mime = contentResolver.getType(uri).orEmpty()
-            attachedText = if (mime.startsWith("text/") || mime.contains("json") ||
-                mime.contains("xml") || mime.contains("csv") || name.endsWith(".md", true) ||
-                name.endsWith(".kt", true) || name.endsWith(".py", true) || name.endsWith(".log", true)) {
-                contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(80000) }.orEmpty()
+            if (mime.startsWith("image/") && (mime == "image/jpeg" || mime == "image/png" || mime == "image/webp" || mime == "image/gif")) {
+                val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IllegalStateException("Gambar tidak dapat dibaca.")
+                if (bytes.size > 8 * 1024 * 1024) throw IllegalArgumentException("Ukuran gambar maksimal 8 MB.")
+                attachedImageData = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                attachedImageMime = mime
+                attachedText = "[Gambar terlampir: $name. Minta AI menganalisis gambar ini.]"
             } else {
-                "[File dipilih: $name, tipe: ${mime.ifBlank { "tidak diketahui" }}. Konten biner belum diekstrak.]"
+                attachedText = if (mime.startsWith("text/") || mime.contains("json") ||
+                    mime.contains("xml") || mime.contains("csv") || name.endsWith(".md", true) ||
+                    name.endsWith(".kt", true) || name.endsWith(".py", true) || name.endsWith(".log", true)) {
+                    contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText().take(80000) }.orEmpty()
+                } else {
+                    "[File dipilih: $name, tipe: ${mime.ifBlank { "tidak diketahui" }}. Konten biner belum diekstrak.]"
+                }
             }
             showChat()
             Toast.makeText(this, "File ditambahkan: $name", Toast.LENGTH_SHORT).show()
