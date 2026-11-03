@@ -3,7 +3,7 @@
     <application
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:label="AgentNova"
-        android:usesCleartextTraffic="false">
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
