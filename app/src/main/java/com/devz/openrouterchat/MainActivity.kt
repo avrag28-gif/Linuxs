@@ -1114,7 +1114,14 @@ class MainActivity : Activity() {
                                 if (target != null && assistantMessage != null && callId.isNotBlank()) {
                                     val msgs = target.optJSONArray("messages") ?: JSONArray()
                                     msgs.put(JSONObject(assistantMessage.toString()))
-                                    msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.take(12000)))
+                                    val providerId = target.optString("provider_id", ProviderRegistry.selected(this).id)
+                                    if (providerId == "anthropic") {
+                                        val block = JSONObject().put("type", "tool_result")
+                                            .put("tool_use_id", callId).put("content", result.take(12000))
+                                        msgs.put(JSONObject().put("role", "user").put("content", JSONArray().put(block)))
+                                    } else {
+                                        msgs.put(JSONObject().put("role", "tool").put("tool_call_id", callId).put("content", result.take(12000)))
+                                    }
                                     target.put("messages", msgs)
                                     saveSessions()
                                     continueAfterMcp(originatingSessionId, assistantMessage, callId, name, result)
