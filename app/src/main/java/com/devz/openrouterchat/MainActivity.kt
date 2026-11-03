@@ -756,15 +756,26 @@ class MainActivity : Activity() {
                 val protocol = init.optString("protocolVersion", "2024-11-05")
                 negotiatedProtocol = protocol
                 rpc("notifications/initialized", JSONObject(), notification = true)
-                val toolsResult = rpc("tools/list", JSONObject().put("cursor", JSONObject.NULL))
-                    ?: throw IllegalStateException("Server tidak mengembalikan daftar tools.")
-                val tools = toolsResult.optJSONArray("tools") ?: JSONArray()
-                val names = (0 until tools.length()).mapNotNull { i ->
-                    tools.optJSONObject(i)?.let { tool ->
-                        val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@let null
-                        val description = tool.optString("description").takeIf { it.isNotBlank() }
-                        if (description == null) name else "$name — $description"
+                val discoveredTools = mutableListOf<JSONObject>()
+                var cursor: String? = null
+                var pages = 0
+                do {
+                    val params = JSONObject()
+                    cursor?.let { params.put("cursor", it) }
+                    val toolsResult = rpc("tools/list", params)
+                        ?: throw IllegalStateException("Server tidak mengembalikan daftar tools.")
+                    val tools = toolsResult.optJSONArray("tools") ?: JSONArray()
+                    for (i in 0 until tools.length()) {
+                        tools.optJSONObject(i)?.let { discoveredTools.add(it) }
+                        if (discoveredTools.size >= 100) break
                     }
+                    cursor = toolsResult.optString("nextCursor").takeIf { it.isNotBlank() && it != "null" }
+                    pages++
+                } while (cursor != null && pages < 10 && discoveredTools.size < 100)
+                val names = discoveredTools.mapNotNull { tool ->
+                    val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val description = tool.optString("description").takeIf { it.isNotBlank() }
+                    if (description == null) name else "$name — $description"
                 }
                 "MCP aktif (protocol $protocol). Ditemukan ${names.size} tools:\\n" +
                     names.joinToString("\\n").ifBlank { "(Server belum menyediakan tools.)" }
