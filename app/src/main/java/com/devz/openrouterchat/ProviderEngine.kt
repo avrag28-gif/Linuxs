@@ -150,11 +150,12 @@ object AnthropicClient {
         for (i in 0 until messages.length()) {
             val item = messages.optJSONObject(i) ?: continue
             val role = item.optString("role")
-            val content = item.optString("content")
+            val contentValue = item.opt("content")
             if (role == "system") {
-                if (content.isNotBlank()) systemParts.add(content)
+                val systemText = if (contentValue is String) contentValue else contentValue?.toString().orEmpty()
+                if (systemText.isNotBlank()) systemParts.add(systemText)
             } else if (role == "user" || role == "assistant") {
-                conversation.put(JSONObject().put("role", role).put("content", content))
+                conversation.put(JSONObject().put("role", role).put("content", contentValue ?: ""))
             }
         }
         require(conversation.length() > 0) { "Pesan percakapan kosong." }
