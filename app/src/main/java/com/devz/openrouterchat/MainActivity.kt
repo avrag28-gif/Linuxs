@@ -357,6 +357,24 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Provider " + p.label + " tersimpan.", Toast.LENGTH_SHORT).show()
         }.apply { setPadding(dp(14), dp(12), dp(14), dp(12)) })
         body.addView(label("Mendukung provider cloud, server lokal, dan endpoint OpenAI-compatible kustom.", 11f, muted).apply { setPadding(0, dp(7), 0, dp(8)) })
+        body.addView(section("SUMBER FILE YANG DIIZINKAN"))
+        val savedSource = prefs.getString("agentnova_selected_name", "").orEmpty()
+        val savedKind = prefs.getString("agentnova_selected_kind", "").orEmpty()
+        body.addView(label(if (savedSource.isBlank()) "Belum ada file atau folder yang dipilih." else "$savedSource · $savedKind", 12f, muted).apply { setPadding(0, dp(4), 0, dp(8)) })
+        body.addView(smallButton("Cabut akses sumber terpilih") {
+            val savedUri = prefs.getString("agentnova_selected_uri", "").orEmpty()
+            if (savedUri.isNotBlank()) {
+                try {
+                    val uri = Uri.parse(savedUri)
+                    contentResolver.persistedUriPermissions.filter { it.uri == uri }.forEach { permission ->
+                        contentResolver.releasePersistableUriPermission(uri, permission.modeFlags)
+                    }
+                } catch (_: Exception) { }
+            }
+            prefs.edit().remove("agentnova_selected_uri").remove("agentnova_selected_kind").remove("agentnova_selected_name").apply()
+            Toast.makeText(this, "Akses sumber terpilih dicabut dari AgentNova.", Toast.LENGTH_SHORT).show()
+            showSettings()
+        })
         body.addView(section("MODE MELAYANG"))
         val pipAuto = android.widget.CheckBox(this).apply {
             text = "Otomatis masuk PiP saat meninggalkan aplikasi"
