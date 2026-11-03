@@ -574,7 +574,7 @@ class MainActivity : Activity() {
                             .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                 .put("enum", JSONArray().put("read").put("list")))
                                 .put("offset", JSONObject().put("type", "integer").put("description", "For read: byte offset; for list: item index. Default 0"))
-                                .put("length", JSONObject().put("type", "integer").put("description", "For read: chunk bytes, maximum 8192; for list: page items, maximum 200")))
+                                .put("length", JSONObject().put("type", "integer").put("description", "For read: chunk bytes, maximum 8192; for list: page items, maximum 30")))
                             .put("required", JSONArray().put("action")).put("additionalProperties", false)))
                     claudeTools.put(JSONObject().put("name", "agentnova_web_search")
                         .put("description", "Cari informasi publik di web untuk pertanyaan yang membutuhkan informasi terbaru atau sumber.")
@@ -1178,7 +1178,7 @@ class MainActivity : Activity() {
                                 } else {
                                     val tree = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
                                     val itemOffset = args.optInt("offset", 0).coerceIn(0, 100000)
-                                    val pageSize = args.optInt("length", 100).coerceIn(1, 200)
+                                    val pageSize = args.optInt("length", 30).coerceIn(1, 30)
                                     val names = mutableListOf<String>()
                                     var seen = 0
                                     var hasMore = false
