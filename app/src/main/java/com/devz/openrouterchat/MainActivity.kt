@@ -1054,7 +1054,13 @@ class MainActivity : Activity() {
                 val target = sessions.firstOrNull { it.optString("id") == executionSessionId }
                 if (target != null) {
                     val targetMessages = target.optJSONArray("messages") ?: JSONArray()
-                    targetMessages.put(JSONObject().put("role", "assistant").put("content", resultForChat))
+                    if (assistantMessage != null && toolCallId.isNotBlank()) {
+                        targetMessages.put(JSONObject(assistantMessage.toString()))
+                        targetMessages.put(JSONObject().put("role", "tool")
+                            .put("tool_call_id", toolCallId).put("content", output.take(12000)))
+                    } else {
+                        targetMessages.put(JSONObject().put("role", "assistant").put("content", resultForChat))
+                    }
                     target.put("messages", targetMessages)
                     saveSessions()
                     if (currentSessionId == executionSessionId) addMessageView("AgentNova · MCP", resultForChat, false)
@@ -1098,9 +1104,7 @@ class MainActivity : Activity() {
                 item.optString("content").startsWith("Saya mengusulkan penggunaan MCP tool")) continue
             request.put(JSONObject(item.toString()))
         }
-        request.put(JSONObject(assistantMessage.toString()))
-        request.put(JSONObject().put("role", "tool")
-            .put("tool_call_id", toolCallId).put("content", toolOutput.take(12000)))
+
         if (provider.requiresKey && key.isBlank()) {
             Toast.makeText(this, "API key provider belum tersedia untuk jawaban lanjutan.", Toast.LENGTH_LONG).show()
             return
