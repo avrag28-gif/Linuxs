@@ -131,8 +131,10 @@ object OpenAiCompatibleClient {
                     val fn = call.optJSONObject("function") ?: continue
                     val args = try { JSONObject(fn.optString("arguments", "{}")) }
                         catch (_: Exception) { JSONObject() }
-                    proposals.put(JSONObject().put("name", fn.optString("name"))
-                        .put("arguments", args))
+                    proposals.put(JSONObject().put("id", call.optString("id"))
+                        .put("name", fn.optString("name"))
+                        .put("arguments", args)
+                        .put("assistant_message", JSONObject(responseMessage.toString())))
                 }
                 return "[AGENTNOVA_MCP_PROPOSALS]$proposals"
             }
