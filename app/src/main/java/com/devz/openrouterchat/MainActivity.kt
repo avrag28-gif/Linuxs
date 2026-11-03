@@ -613,7 +613,7 @@ class MainActivity : Activity() {
                                 .put("required", JSONArray().put("action")).put("additionalProperties", false))))
                     modelTools.put(JSONObject().put("type", "function").put("function",
                         JSONObject().put("name", "agentnova_selected_file")
-                            .put("description", "Read a user-selected text file or list a user-selected folder after explicit approval.")
+                            .put("description", "Read a user-selected text, source-code, Markdown, CSV, JSON, XML, HTML, YAML, or configuration file up to 512 KB, preserving line breaks, or list a user-selected folder after explicit approval.")
                             .put("parameters", JSONObject().put("type", "object")
                                 .put("properties", JSONObject().put("action", JSONObject().put("type", "string")
                                     .put("enum", JSONArray().put("read").put("list")))
@@ -1140,7 +1140,13 @@ class MainActivity : Activity() {
                                             }
                                             out.toByteArray()
                                         } ?: throw IllegalStateException("File tidak dapat dibaca.")
-                                        "Isi file '$selectedName':\n" + String(bytes, Charsets.UTF_8)
+                                        val decoded = when {
+                                            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+                                            bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte() -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+                                            bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte() -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+                                            else -> String(bytes, Charsets.UTF_8)
+                                        }
+                                        "Isi file '$selectedName' (teks asli; ${bytes.size} byte):\n" + decoded
                                     }
                                 } else {
                                     val tree = DocumentsContract.buildChildDocumentsUriUsingTree(uri, DocumentsContract.getTreeDocumentId(uri))
