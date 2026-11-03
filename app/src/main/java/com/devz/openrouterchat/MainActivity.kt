@@ -514,12 +514,27 @@ class MainActivity : Activity() {
                         model = model
                     )
                 } else {
+                    val catalog = try { JSONArray(prefs.getString("mcp_tools_json", "[]")) }
+                        catch (_: Exception) { JSONArray() }
+                    val modelTools = JSONArray()
+                    for (index in 0 until catalog.length()) {
+                        val tool = catalog.optJSONObject(index) ?: continue
+                        val name = tool.optString("name").trim()
+                        if (name.isBlank()) continue
+                        val schema = tool.optJSONObject("inputSchema") ?: JSONObject()
+                            .put("type", "object").put("properties", JSONObject())
+                        val fn = JSONObject().put("name", name)
+                            .put("description", tool.optString("description", "MCP tool"))
+                            .put("parameters", schema)
+                        modelTools.put(JSONObject().put("type", "function").put("function", fn))
+                    }
                     OpenAiCompatibleClient.chat(
                         this, requestMessages,
                         providerSnapshot = provider,
                         apiKeySnapshot = key,
                         baseUrlSnapshot = baseUrl,
-                        modelSnapshot = model
+                        modelSnapshot = model,
+                        toolsSnapshot = modelTools.takeIf { it.length() > 0 }
                     )
                 }
             } catch (e: Exception) { "Permintaan gagal: " + (e.message ?: "periksa konfigurasi provider dan koneksi.") }
