@@ -104,7 +104,9 @@ object OpenAiCompatibleClient {
         try {
             val requestBody = JSONObject().put("model", model).put("messages", messages)
             if (toolsSnapshot != null && toolsSnapshot.length() > 0) {
-                requestBody.put("tools", toolsSnapshot).put("tool_choice", "auto")
+                requestBody.put("tools", toolsSnapshot)
+                    .put("tool_choice", "auto")
+                    .put("parallel_tool_calls", false)
             }
             val body = requestBody.toString()
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
