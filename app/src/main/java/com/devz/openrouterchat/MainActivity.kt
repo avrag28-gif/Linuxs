@@ -1046,6 +1046,16 @@ class MainActivity : Activity() {
             } catch (e: Exception) { "MCP tool gagal: " + (e.message ?: "kesalahan tidak diketahui") }
             runOnUiThread {
                 if (::status.isInitialized) status.text = "MCP selesai"
+                val resultForChat = "Hasil MCP ($toolName):\n" + output.take(6000)
+                val target = sessions.firstOrNull { it.optString("id") == executionSessionId }
+                if (target != null) {
+                    val targetMessages = target.optJSONArray("messages") ?: JSONArray()
+                    targetMessages.put(JSONObject().put("role", "assistant").put("content", resultForChat))
+                    target.put("messages", targetMessages)
+                    saveSessions()
+                    if (currentSessionId == executionSessionId) addMessageView("AgentNova · MCP", resultForChat, false)
+                    buildDrawer()
+                }
                 android.app.AlertDialog.Builder(this).setTitle("Hasil MCP tool")
                     .setMessage(output.take(10000)).setPositiveButton("Tutup", null).show()
             }
