@@ -693,32 +693,89 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Masukkan URL endpoint MCP terlebih dahulu.", Toast.LENGTH_SHORT).show()
             return
         }
+        val parsed = try { URL(endpoint) } catch (_: Exception) { null }
+        if (parsed == null || (parsed.protocol != "https" && parsed.protocol != "http")) {
+            Toast.makeText(this, "Endpoint MCP harus berupa URL HTTP(S) yang valid.", Toast.LENGTH_LONG).show()
+            return
+        }
         prefs.edit().putString("mcp_url", endpoint).apply()
-        Toast.makeText(this, "Menghubungi MCP…", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Memulai koneksi MCP…", Toast.LENGTH_SHORT).show()
         thread {
             val result = try {
-                val c = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 12000; readTimeout = 20000; doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Accept", "application/json, text/event-stream")
-                }
-                try {
-                    val body = JSONObject().put("jsonrpc", "2.0").put("id", 1)
-                        .put("method", "tools/list").put("params", JSONObject()).toString()
-                    c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                    val code = c.responseCode
-                    val raw = (if (code in 200..299) c.inputStream else c.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    if (code !in 200..299) "MCP HTTP $code: ${raw.take(250)}" else {
-                        val jsonText = raw.lineSequence().firstOrNull { it.trim().startsWith("{") } ?: raw
-                        val tools = JSONObject(jsonText).optJSONObject("result")?.optJSONArray("tools")
-                        if (tools == null) "Terhubung, tetapi respons tools/list tidak dikenali." else
-                            (0 until tools.length()).mapNotNull { i -> tools.optJSONObject(i)?.optString("name") }
-                                .joinToString(", ").ifBlank { "Terhubung; server belum menyediakan tools." }
+                var sessionId: String? = null
+                var requestId = 1
+
+                fun rpc(method: String, params: JSONObject, notification: Boolean = false): JSONObject? {
+                    val c = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 12000
+                        readTimeout = 25000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("Accept", "application/json, text/event-stream")
+                        sessionId?.let { setRequestProperty("Mcp-Session-Id", it) }
                     }
-                } finally { c.disconnect() }
-            } catch (e: Exception) { "MCP gagal: ${e.message}" }
+                    try {
+                        val payload = JSONObject()
+                            .put("jsonrpc", "2.0")
+                            .put("method", method)
+                            .put("params", params)
+                        if (!notification) payload.put("id", requestId++)
+                        c.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                        val code = c.responseCode
+                        c.getHeaderField("Mcp-Session-Id")?.takeIf { it.isNotBlank() }?.let { sessionId = it }
+                        val raw = (if (code in 200..299) c.inputStream else c.errorStream)
+                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) throw IllegalStateException("MCP HTTP $code: ${raw.take(300)}")
+                        if (notification || raw.isBlank()) return null
+                        val jsonLine = raw.lineSequence()
+                            .map { it.trim() }
+                            .firstOrNull { it.startsWith("{") }
+                            ?: throw IllegalStateException("Respons MCP bukan JSON/SSE yang dikenali.")
+                        val response = JSONObject(jsonLine)
+                        if (response.has("error")) {
+                            val error = response.optJSONObject("error")
+                            throw IllegalStateException("MCP: ${error?.optString("message") ?: "RPC error"}")
+                        }
+                        return response.optJSONObject("result")
+                            ?: throw IllegalStateException("Respons MCP tidak memiliki result.")
+                    } finally {
+                        c.disconnect()
+                    }
+                }
+
+                val init = rpc(
+                    "initialize",
+                    JSONObject()
+                        .put("protocolVersion", "2024-11-05")
+                        .put("capabilities", JSONObject())
+                        .put("clientInfo", JSONObject().put("name", "AgentNova").put("version", "1.0"))
+                ) ?: throw IllegalStateException("Server tidak mengembalikan hasil initialize.")
+                val protocol = init.optString("protocolVersion", "unknown")
+                rpc("notifications/initialized", JSONObject(), notification = true)
+                val toolsResult = rpc("tools/list", JSONObject().put("cursor", JSONObject.NULL))
+                    ?: throw IllegalStateException("Server tidak mengembalikan daftar tools.")
+                val tools = toolsResult.optJSONArray("tools") ?: JSONArray()
+                val names = (0 until tools.length()).mapNotNull { i ->
+                    tools.optJSONObject(i)?.let { tool ->
+                        val name = tool.optString("name").takeIf { it.isNotBlank() } ?: return@let null
+                        val description = tool.optString("description").takeIf { it.isNotBlank() }
+                        if (description == null) name else "$name — $description"
+                    }
+                }
+                "MCP aktif (protocol $protocol). Ditemukan ${names.size} tools:\\n" +
+                    names.joinToString("\\n").ifBlank { "(Server belum menyediakan tools.)" }
+            } catch (e: Exception) {
+                "MCP gagal: ${e.message ?: "kesalahan koneksi"}"
+            }
             prefs.edit().putString("mcp_tools", result).apply()
-            runOnUiThread { Toast.makeText(this, result.take(180), Toast.LENGTH_LONG).show() }
+            runOnUiThread {
+                Toast.makeText(this, result.take(220), Toast.LENGTH_LONG).show()
+                if (::page.isInitialized && page.childCount > 0) {
+                    // Refresh settings so the latest discovery result is visible.
+                    if (mcpField.isInitialized) showSettings()
+                }
+            }
         }
     }
 
